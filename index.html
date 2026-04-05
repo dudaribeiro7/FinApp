@@ -387,6 +387,7 @@ select option{background:var(--bg3)}
 .type-tab.active-fixo{background:var(--amber);border-color:var(--amber);color:#0a0a0a}
 .type-tab.active-debito{background:var(--red);border-color:var(--red);color:#fff}
 .type-tab.active-credito{background:var(--purple);border-color:var(--purple);color:#fff}
+.type-tab.active-entrada_fixa{background:var(--green);border-color:var(--green);color:#0a0a0a}
 
 /* seg control */
 .seg-ctrl{
@@ -648,18 +649,14 @@ select option{background:var(--bg3)}
     <div class="saldo-hero">
       <div class="saldo-label">Saldo final</div>
       <div class="saldo-valor"><span class="cur">R$</span><span id="h-saldo-final">0,00</span></div>
-      <div class="saldo-grid">
+      <div class="saldo-grid" style="grid-template-columns:1fr 1fr">
         <div>
-          <div class="saldo-item-label">Inicial</div>
+          <div class="saldo-item-label">Saldo inicial</div>
           <div class="saldo-item-val" id="h-saldo-ini">0,00</div>
         </div>
         <div>
-          <div class="saldo-item-label">Dinheiro</div>
-          <div class="saldo-item-val" id="h-dinheiro">0,00</div>
-        </div>
-        <div>
-          <div class="saldo-item-label">Conta</div>
-          <div class="saldo-item-val" id="h-conta">0,00</div>
+          <div class="saldo-item-label">Variação no mês</div>
+          <div class="saldo-item-val" id="h-variacao">0,00</div>
         </div>
       </div>
     </div>
@@ -677,29 +674,16 @@ select option{background:var(--bg3)}
       </div>
       <div class="metric-card">
         <div class="metric-top">
-          <span class="metric-label">Saídas</span>
+          <span class="metric-label">Saídas (débito)</span>
           <div class="metric-dot" style="background:var(--red)"></div>
         </div>
         <div class="metric-val" style="color:var(--red)" id="h-saidas">R$0</div>
         <div class="metric-sub" id="h-saidas-sub">0 lançamentos</div>
       </div>
-      <div class="metric-card">
-        <div class="metric-top">
-          <span class="metric-label">Na conta</span>
-          <div class="metric-dot" style="background:var(--blue)"></div>
-        </div>
-        <div class="metric-val" style="color:var(--blue)" id="h-conta-val">R$0</div>
-        <div class="metric-sub">Disponível</div>
-      </div>
-      <div class="metric-card">
-        <div class="metric-top">
-          <span class="metric-label">Reserva</span>
-          <div class="metric-dot" style="background:var(--amber)"></div>
-        </div>
-        <div class="metric-val" style="color:var(--amber)" id="h-reserva">R$0</div>
-        <div class="metric-sub">Este mês</div>
-      </div>
     </div>
+    <!-- ids ocultos para compatibilidade -->
+    <span id="h-conta-val" style="display:none"></span>
+    <span id="h-reserva" style="display:none"></span>
 
     <!-- barra progresso -->
     <div class="prog-wrap" id="h-prog-wrap">
@@ -770,6 +754,7 @@ select option{background:var(--bg3)}
 
   <div class="type-tabs" id="type-tabs">
     <div class="type-tab" data-type="entrada" onclick="App.setTipoLanc('entrada')">Entrada</div>
+    <div class="type-tab" data-type="entrada_fixa" onclick="App.setTipoLanc('entrada_fixa')">Entrada fixa</div>
     <div class="type-tab" data-type="fixo" onclick="App.setTipoLanc('fixo')">Gasto fixo</div>
     <div class="type-tab" data-type="debito" onclick="App.setTipoLanc('debito')">Débito</div>
     <div class="type-tab" data-type="credito" onclick="App.setTipoLanc('credito')">Crédito</div>

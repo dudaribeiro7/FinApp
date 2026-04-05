@@ -1,8 +1,8 @@
 /* ═══════════════════════════════════════════
-   db.js — IndexedDB layer v2
+   db.js — IndexedDB layer v3
 ═══════════════════════════════════════════ */
 const DB = (() => {
-  const NAME = 'financas_app', VERSION = 2;
+  const NAME = 'financas_app', VERSION = 3;
   let _db = null;
 
   async function open() {
@@ -52,20 +52,50 @@ const DB = (() => {
   async function saveFixoTemplate(obj) { await open(); return put('fixos_template', obj); }
   async function deleteFixoTemplate(id) { await open(); return del('fixos_template', id); }
 
+  // Garante instâncias de gastos fixos E entradas fixas no mês
   async function ensureFixosMes(mesAno) {
     await open();
     const templates = await all('fixos_template');
     if (!templates.length) return;
     const existentes = await byIndex('lancamentos','mesAno',mesAno);
-    const existTemplIds = new Set(existentes.filter(l=>l.tipo==='fixo'&&l.templateId).map(l=>l.templateId));
+    const existTemplIds = new Set(existentes.filter(l=>l.templateId).map(l=>l.templateId));
+    // Extrair mês e ano do mesAno (ex: "04-2026")
+    const [mesStr, anoStr] = mesAno.split('-');
+    const mes = parseInt(mesStr) - 1; // 0-based
+    const ano = parseInt(anoStr);
+
     for (const tmpl of templates) {
-      if (!existTemplIds.has(tmpl.id)) {
+      if (existTemplIds.has(tmpl.id)) continue;
+      if (tmpl.tipo === 'entrada_fixa') {
+        // data = dia fixo no mês atual
+        const dia = tmpl.diaDoMes || 1;
+        const dataStr = `${ano}-${String(mes+1).padStart(2,'0')}-${String(dia).padStart(2,'0')}`;
         await put('lancamentos', {
-          tipo:'fixo', templateId:tmpl.id,
-          categoriaId:tmpl.categoriaId, subcat:tmpl.subcat,
-          descricao:tmpl.descricao, valor:tmpl.valor,
-          pagamento:tmpl.pagamento, cartaoId:tmpl.cartaoId,
-          pago:false, mesAno, criadoEm:Date.now(),
+          tipo: 'entrada',
+          templateId: tmpl.id,
+          categoriaId: tmpl.categoriaId,
+          subcat: tmpl.subcat,
+          descricao: tmpl.descricao,
+          valor: tmpl.valor,
+          data: dataStr,
+          fixo: true, // marca como entrada fixa
+          mesAno,
+          criadoEm: Date.now(),
+        });
+      } else {
+        // gasto fixo
+        await put('lancamentos', {
+          tipo: 'fixo',
+          templateId: tmpl.id,
+          categoriaId: tmpl.categoriaId,
+          subcat: tmpl.subcat,
+          descricao: tmpl.descricao,
+          valor: tmpl.valor,
+          pagamento: tmpl.pagamento,
+          cartaoId: tmpl.cartaoId,
+          pago: false,
+          mesAno,
+          criadoEm: Date.now(),
         });
       }
     }
