@@ -373,15 +373,16 @@ select option{background:var(--bg3)}
 
 /* type tabs */
 .type-tabs{
-  display:flex;gap:8px;padding:0 20px;margin-bottom:20px;
-  overflow-x:auto;scrollbar-width:none;flex-shrink:0;
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  gap:8px;padding:0 20px;margin-bottom:20px;flex-shrink:0;
 }
-.type-tabs::-webkit-scrollbar{display:none}
 .type-tab{
-  flex-shrink:0;padding:8px 16px;border-radius:20px;
+  padding:9px 6px;border-radius:12px;
   border:0.5px solid var(--border2);background:var(--bg3);
-  color:var(--text2);font-size:13px;font-weight:500;cursor:pointer;
+  color:var(--text2);font-size:12px;font-weight:500;cursor:pointer;
   transition:all 0.15s;font-family:'DM Sans',sans-serif;
+  text-align:center;
 }
 .type-tab.active-entrada{background:var(--green);border-color:var(--green);color:#0a0a0a}
 .type-tab.active-fixo{background:var(--amber);border-color:var(--amber);color:#0a0a0a}

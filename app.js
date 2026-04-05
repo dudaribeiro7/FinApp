@@ -56,6 +56,30 @@ const App = (() => {
     return dateStr <= hoje;
   }
   function getCatById(id) { return state.categorias.find(c=>c.id===id); }
+
+  // Ícone do banco via Google Favicon API
+  const BANCO_DOMINIOS = {
+    'nubank':'nubank.com.br','itaú':'itau.com.br','itau':'itau.com.br',
+    'bradesco':'bradesco.com.br','santander':'santander.com.br',
+    'caixa':'caixa.gov.br','bb':'bb.com.br','banco do brasil':'bb.com.br',
+    'c6':'c6bank.com.br','c6 bank':'c6bank.com.br','inter':'bancointer.com.br',
+    'xp':'xpi.com.br','picpay':'picpay.com','mercado pago':'mercadopago.com.br',
+    'next':'next.me','original':'original.com.br','pagbank':'pagbank.com.br',
+    'sicoob':'sicoob.com.br','sicredi':'sicredi.com.br','neon':'neon.com.br',
+    'will bank':'willbank.com.br','will':'willbank.com.br',
+  };
+  function getBancoIconUrl(nome) {
+    const key = nome.toLowerCase().trim();
+    for (const [k, domain] of Object.entries(BANCO_DOMINIOS)) {
+      if (key.includes(k)) return `https://www.google.com/s2/favicons?domain=${domain}&sz=64`;
+    }
+    return null;
+  }
+  function getBancoIconHtml(nome, size=28) {
+    const url = getBancoIconUrl(nome);
+    if (!url) return '';
+    return `<img src="${url}" width="${size}" height="${size}" style="border-radius:${size/4}px;object-fit:cover;flex-shrink:0" onerror="this.style.display='none'">`;
+  }
   function getCartaoById(id) { return state.cartoes.find(c=>c.id===id); }
   function getCatEmoji(l) {
     const cat = getCatById(l.categoriaId);
@@ -129,6 +153,7 @@ const App = (() => {
     ['home-month-label','lanc-month-label'].forEach(id=>{const el=document.getElementById(id);if(el)el.textContent=label;});
     if (state.currentScreen==='screen-home') renderHome();
     if (state.currentScreen==='screen-lancamentos') renderLancamentos();
+    if (state.currentScreen==='screen-relatorios') renderRelatorios();
   }
 
   /* ── Cálculos de saldo ───────────────── */
@@ -255,14 +280,16 @@ const App = (() => {
       const pct = c.limite?Math.min((usado/c.limite)*100,100):0;
       return `<div class="cartao-chip" style="cursor:pointer" onclick="App.abrirCartao(${c.id})">
         <div class="cartao-band" style="background:${c.cor}"></div>
-        <div class="cartao-chip-info">
+        <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0">
+          ${getBancoIconHtml(c.nome,30)||`<div style="width:30px;height:30px;border-radius:8px;background:${c.cor}22;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0">💳</div>`}
+          <div class="cartao-chip-info" style="flex:1;min-width:0">
           <div class="cartao-chip-nome">${c.nome}</div>
           <div class="cartao-chip-venc">Vence dia ${c.vencimento}</div>
           <div class="cartao-mini-bar"><div class="cartao-mini-fill" style="width:${pct}%;background:${c.cor}"></div></div>
-        </div>
+        </div></div>
         <div class="cartao-chip-vals">
           <div class="cartao-chip-usado" style="color:${c.cor}">${fmtMoney(usado)}</div>
-          <div class="cartao-chip-limite">/ ${c.limite?fmtMoney(c.limite):'—'}</div>
+          <div class="cartao-chip-limite" style="font-size:10px;color:var(--text3)">fatura</div>
         </div>
       </div>`;
     }).join('');
@@ -912,26 +939,6 @@ const App = (() => {
           <span style="font-size:15px;font-weight:600;font-family:'DM Mono',monospace;color:var(--text)">${fmtMoney(saldoFinal)}</span>
         </div>
       </div>
-      <div class="card" style="padding:20px">
-        <div class="section-label" style="padding:0;margin-bottom:14px">Limite dos cartões</div>
-        ${state.cartoes.map(c=>{
-          const fatMes=creditoPorCartao[c.id]||0;
-          const pct=c.limite?Math.min((fatMes/c.limite)*100,100):0;
-          return `<div style="margin-bottom:14px">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-              <span style="font-size:14px;font-weight:500;color:${c.cor}">${c.nome}</span>
-              <span style="font-size:13px;font-family:'DM Mono',monospace;color:var(--text2)">${fmtMoney(fatMes)} <span style="color:var(--text3)">/ ${fmtMoney(c.limite||0)}</span></span>
-            </div>
-            <div style="height:8px;background:var(--bg4);border-radius:4px;overflow:hidden">
-              <div style="height:100%;width:${pct}%;background:${c.cor};border-radius:4px;transition:width 0.4s"></div>
-            </div>
-            <div style="display:flex;justify-content:space-between;margin-top:4px">
-              <span style="font-size:11px;color:var(--text3)">${pct.toFixed(1)}% utilizado</span>
-              <span style="font-size:11px;color:var(--text3)">${fmtMoney((c.limite||0)-fatMes)} disponível</span>
-            </div>
-          </div>`;
-        }).join('')}
-      </div>
       <div style="height:8px"></div>`;
 
     setTimeout(()=>{
@@ -1010,6 +1017,59 @@ const App = (() => {
       <div style="height:8px"></div>`;
 
     setTimeout(()=>{ drawLineChart(dados); drawSaldoChart(dados); },100);
+
+    // Card de limite acumulado (faturas com vencimento futuro)
+    await renderLimiteCartoes(el);
+  }
+
+  async function renderLimiteCartoes(parentEl) {
+    const allLancs = await DB.getAllLancamentos();
+    const hoje = todayStr();
+
+    const rows = await Promise.all(state.cartoes.map(async c => {
+      let totalNaoPago = 0;
+      // Créditos em meses cuja fatura ainda não venceu
+      const creditos = allLancs.filter(l => l.tipo === 'credito' && l.cartaoId === c.id);
+      for (const l of creditos) {
+        const [mesStr, anoStr] = l.mesAno.split('-');
+        const m = parseInt(mesStr) - 1;
+        const y = parseInt(anoStr);
+        // Fatura do mês M vence no mês M+1 dia c.vencimento
+        const dVenc = new Date(y, m + 1, c.vencimento);
+        const vencStr = `${dVenc.getFullYear()}-${String(dVenc.getMonth()+1).padStart(2,'0')}-${String(c.vencimento).padStart(2,'0')}`;
+        if (vencStr >= hoje) totalNaoPago += (l.valorParcela || 0);
+      }
+      // Fixos no crédito não pagos
+      allLancs.filter(l => l.tipo === 'fixo' && !l.pago && l.cartaoId === c.id)
+               .forEach(l => totalNaoPago += (l.valor || 0));
+
+      const pct = c.limite ? Math.min((totalNaoPago / c.limite) * 100, 100) : 0;
+      const disp = Math.max((c.limite || 0) - totalNaoPago, 0);
+      const iconHtml = getBancoIconHtml(c.nome, 28);
+      return `<div style="margin-bottom:16px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+          ${iconHtml || `<div style="width:28px;height:28px;border-radius:7px;background:${c.cor}22;display:flex;align-items:center;justify-content:center;font-size:13px">💳</div>`}
+          <span style="font-size:15px;font-weight:600;color:${c.cor}">${c.nome}</span>
+          <span style="margin-left:auto;font-size:13px;font-family:'DM Mono',monospace;color:var(--text2)">${fmtMoney(totalNaoPago)} <span style="color:var(--text3)">/ ${fmtMoney(c.limite||0)}</span></span>
+        </div>
+        <div style="height:10px;background:var(--bg4);border-radius:5px;overflow:hidden;margin-bottom:6px">
+          <div style="height:100%;width:${pct}%;background:${c.cor};border-radius:5px"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between">
+          <span style="font-size:11px;color:var(--text3)">${pct.toFixed(1)}% comprometido</span>
+          <span style="font-size:11px;color:var(--text3)">${fmtMoney(disp)} disponível</span>
+        </div>
+      </div>`;
+    }));
+
+    const cardHtml = `<div class="card" style="padding:20px">
+      <div class="section-label" style="padding:0;margin-bottom:4px">Limite comprometido</div>
+      <div style="font-size:11px;color:var(--text3);margin-bottom:16px">Faturas com vencimento futuro ainda não pagas</div>
+      ${rows.join('')}
+    </div>
+    <div style="height:8px"></div>`;
+
+    parentEl.insertAdjacentHTML('beforeend', cardHtml);
   }
 
   function _setRelPeriodo(p){state.relPeriodo=p;renderRelatorios();}
@@ -1181,7 +1241,7 @@ const App = (() => {
       const usado=creditoPorCartao[c.id]||0,pct=c.limite?Math.min((usado/c.limite)*100,100):0;
       return `<div class="cartao-cfg-card">
         <div class="cartao-cfg-header">
-          <div class="cartao-cfg-band" style="background:${c.cor}"></div>
+          ${getBancoIconHtml(c.nome,36)||`<div class="cartao-cfg-band" style="background:${c.cor}"></div>`}
           <div class="cartao-cfg-info"><div class="cartao-cfg-nome">${c.nome}</div><div class="cartao-cfg-datas">Fecha dia ${c.fechamento} · Vence dia ${c.vencimento}</div></div>
           <div class="cartao-cfg-limit"><div class="cartao-cfg-limit-label">Limite usado</div><div class="cartao-cfg-limit-val" style="color:${c.cor}">${fmtMoney(usado)} / ${fmtMoney(c.limite||0)}</div></div>
         </div>
@@ -1406,6 +1466,27 @@ const App = (() => {
     await DB.saveCartao(obj);state.cartoes=await DB.getCartoes();
     closeModal();renderPerfil();toast(id!==null?'Cartão atualizado':'Cartão adicionado','ok');
   }
+  // Cria/atualiza o template de "fatura" automático do cartão
+  async function _sincronizarFaturaTemplate(cartaoId) {
+    const templates = await DB.getFixosTemplates();
+    // Remover template de fatura antigo deste cartão
+    const antigo = templates.find(t => t.faturaCartaoId === cartaoId);
+    if (antigo) await DB.deleteFixoTemplate(antigo.id);
+    // Criar novo template (será atualizado mensalmente)
+    const tmplId = await DB.saveFixoTemplate({
+      tipo: 'fatura_cartao',
+      faturaCartaoId: cartaoId,
+      categoriaId: null,
+      descricao: null,
+      valor: 0, // será calculado dinamicamente
+      pagamento: String(cartaoId),
+      cartaoId: cartaoId,
+      mesAnoMinimo: mesAnoStr(new Date().getMonth(), new Date().getFullYear()),
+      autoFatura: true,
+    });
+    return tmplId;
+  }
+
   async function _deletarTodasParcelas(grupoId){
     const allLancs=await DB.getAllLancamentos();
     for(const l of allLancs.filter(l=>l.grupoId===grupoId)) await DB.deleteLancamento(l.id);
