@@ -51,8 +51,9 @@ const App = (() => {
   // Data confirmada = data <= hoje
   function isDateConfirmed(dateStr) {
     if (!dateStr) return false;
-    const d = new Date(dateStr+'T23:59:59');
-    return d <= new Date();
+    // Comparar apenas as datas (ignorar hora) para evitar problemas de timezone
+    const hoje = todayStr(); // YYYY-MM-DD
+    return dateStr <= hoje;
   }
   function getCatById(id) { return state.categorias.find(c=>c.id===id); }
   function getCartaoById(id) { return state.cartoes.find(c=>c.id===id); }
@@ -114,7 +115,7 @@ const App = (() => {
   /* ── Dados ───────────────────────────── */
   async function loadData() {
     [state.categorias, state.cartoes] = await Promise.all([DB.getCategorias(), DB.getCartoes()]);
-    await DB.ensureFixosMes(mesAnoStr(state.currentMonth, state.currentYear));
+    await DB.ensureFixosMes(mesAnoStr(state.currentMonth, state.currentYear), mesAnoStr(new Date().getMonth(), new Date().getFullYear()));
     state.lancamentos = await DB.getLancamentos(mesAnoStr(state.currentMonth, state.currentYear));
   }
 
@@ -122,7 +123,7 @@ const App = (() => {
     state.currentMonth += dir;
     if (state.currentMonth<0) { state.currentMonth=11; state.currentYear--; }
     if (state.currentMonth>11) { state.currentMonth=0; state.currentYear++; }
-    await DB.ensureFixosMes(mesAnoStr(state.currentMonth, state.currentYear));
+    await DB.ensureFixosMes(mesAnoStr(state.currentMonth, state.currentYear), mesAnoStr(new Date().getMonth(), new Date().getFullYear()));
     state.lancamentos = await DB.getLancamentos(mesAnoStr(state.currentMonth, state.currentYear));
     const label = `${MONTHS[state.currentMonth]} ${state.currentYear}`;
     ['home-month-label','lanc-month-label'].forEach(id=>{const el=document.getElementById(id);if(el)el.textContent=label;});
@@ -132,31 +133,34 @@ const App = (() => {
 
   /* ── Cálculos de saldo ───────────────── */
   async function getSaldoFinalMes(m, y) {
-    const key = mesAnoStr(m, y);
-    const lancs = await DB.getLancamentos(key);
-    const saldoIni = await getSaldoInicialMes(m, y);
-    // entradas confirmadas (data <= hoje ou data <= último dia do mês)
-    const lastDay = new Date(y, m+1, 0);
-    const entradas = lancs.filter(l=>(l.tipo==='entrada')&&l.data&&new Date(l.data+'T23:59:59')<=lastDay)
-                          .reduce((s,l)=>s+(l.valor||0),0);
-    // saídas débito confirmadas
-    const debitos = lancs.filter(l=>l.tipo==='debito').reduce((s,l)=>s+(l.valor||0),0);
-    const fixosDeb = lancs.filter(l=>l.tipo==='fixo'&&l.pago&&l.pagamento==='debito').reduce((s,l)=>s+(l.valor||0),0);
-    return saldoIni + entradas - debitos - fixosDeb;
+    // Para uso nos relatórios de evolução
+    return getSaldoFinalMesFechado(m, y, null);
   }
 
   async function getSaldoInicialMes(m, y) {
-    // saldo inicial = saldo final do mês anterior
-    const prevM = m===0?11:m-1;
-    const prevY = m===0?y-1:y;
-    // Para o primeiro mês com dados, saldo inicial é 0 (ou o que estiver salvo manualmente)
+    // Verificar se há valor salvo manualmente
     const saved = localStorage.getItem('saldo_ini_'+mesAnoStr(m,y));
     if (saved !== null) return parseFloat(saved);
-    // Calcular recursivamente (limite de 12 meses para não travar)
+    // Saldo inicial = saldo final do mês anterior (usando lançamentos confirmados até o último dia daquele mês)
+    const prevM = m===0?11:m-1;
+    const prevY = m===0?y-1:y;
     const allLancs = await DB.getAllLancamentos();
     const hasPrev = allLancs.some(l=>l.mesAno===mesAnoStr(prevM,prevY));
     if (!hasPrev) return 0;
-    return getSaldoFinalMes(prevM, prevY);
+    return getSaldoFinalMesFechado(prevM, prevY, allLancs);
+  }
+
+  // Calcula saldo final de um mês já encerrado (considera tudo como confirmado)
+  async function getSaldoFinalMesFechado(m, y, allLancs) {
+    const key = mesAnoStr(m, y);
+    const lancs = allLancs ? allLancs.filter(l=>l.mesAno===key) : await DB.getLancamentos(key);
+    const saldoIni = await getSaldoInicialMes(m, y);
+    // Todas as entradas do mês (independente da data, já que o mês encerrou)
+    const entradas = lancs.filter(l=>l.tipo==='entrada').reduce((s,l)=>s+(l.valor||0),0);
+    // Saídas débito (avulso + fixo débito pago)
+    const debitos = lancs.filter(l=>l.tipo==='debito').reduce((s,l)=>s+(l.valor||0),0);
+    const fixosDeb = lancs.filter(l=>l.tipo==='fixo'&&l.pago&&l.pagamento==='debito').reduce((s,l)=>s+(l.valor||0),0);
+    return saldoIni + entradas - debitos - fixosDeb;
   }
 
   /* ══════════════════════════════════════
@@ -289,10 +293,12 @@ const App = (() => {
     const pendente = isEntrada && l.data && !isDateConfirmed(l.data);
     const dataTxt = l.data ? new Date(l.data+'T12:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}) : '';
 
-    // linha de detalhe — item 8: especificar débito/fixo/cartão
+    // Detalhe: categoria ou "emoji_subcat Nome_cat › Nome_subcat"
     let detalhe = '';
-    if (l.subcat) {
-      detalhe = `${emoji} ${l.subcat}`;
+    if (l.subcat && cat) {
+      const subObj = cat.subcats ? cat.subcats.find(s=>(typeof s==='string'?s:s.nome)===l.subcat) : null;
+      const subEmoji = (subObj && typeof subObj==='object') ? subObj.emoji : '';
+      detalhe = `${subEmoji ? subEmoji+' ' : ''}${cat.nome} › ${l.subcat}`;
     } else if (cat) {
       detalhe = cat.nome;
     }
@@ -320,10 +326,12 @@ const App = (() => {
     // Nome: descrição ou nome da categoria
     const nome = l.descricao || cat?.nome || l.tipo;
 
+    // Ícone: sempre emoji da CATEGORIA (não subcategoria)
+    const catEmoji = cat ? cat.emoji : (isEntrada ? '💰' : '💸');
     return `<div class="feed-item" onclick="App.editLancamento(${l.id})">
       ${pagoToggle}
       <div class="feed-icon" style="background:${bgCor}">
-        <span style="font-size:17px;line-height:1">${getCatEmoji(l)}</span>
+        <span style="font-size:17px;line-height:1">${catEmoji}</span>
       </div>
       <div class="feed-info">
         <div class="feed-nome">${nome}</div>
@@ -671,8 +679,9 @@ const App = (() => {
       // data = dia fixo no mês atual
       obj.data=`${state.currentYear}-${String(state.currentMonth+1).padStart(2,'0')}-${String(dia).padStart(2,'0')}`;
       if(!state.editingId){
-        // salvar template de entrada fixa
-        const tmpl={tipo:'entrada_fixa',categoriaId:catId,subcat,descricao:desc,valor,diaDoMes:dia};
+        // salvar template de entrada fixa — mesAnoMinimo = mês atual (não criar em meses passados)
+        const mesAnoMinimo=mesAnoStr(state.currentMonth,state.currentYear);
+        const tmpl={tipo:'entrada_fixa',categoriaId:catId,subcat,descricao:desc,valor,diaDoMes:dia,mesAnoMinimo};
         const tmplId=await DB.saveFixoTemplate(tmpl);
         obj.templateId=tmplId;
       }
@@ -684,7 +693,9 @@ const App = (() => {
       obj.cartaoId=obj.pagamento==='debito'?null:parseInt(obj.pagamento);
       obj.pago=document.getElementById('toggle-pago')?.classList.contains('on')||false;
       if(!state.editingId){
-        const tmpl={tipo:'fixo',categoriaId:catId,subcat,descricao:desc,valor,pagamento:obj.pagamento,cartaoId:obj.cartaoId};
+        // mesAnoMinimo = mês atual (não replicar em meses passados)
+        const mesAnoMinimo=mesAnoStr(state.currentMonth,state.currentYear);
+        const tmpl={tipo:'fixo',categoriaId:catId,subcat,descricao:desc,valor,pagamento:obj.pagamento,cartaoId:obj.cartaoId,mesAnoMinimo};
         const tmplId=await DB.saveFixoTemplate(tmpl);
         obj.templateId=tmplId;
       }
@@ -706,25 +717,23 @@ const App = (() => {
       const mesAnoCompra=mesAnoStr(dCompra.getMonth(),dCompra.getFullYear());
       if(!state.editingId){
         const grupoId=Date.now();
-        // Todas as parcelas ficam no mês da COMPRA
-        // mesPagamento indica quando será cobrado
+        // Cada parcela fica no mês em que será COBRADA na fatura
         const dPrimeiroPgto=new Date(dCompra);
         if(diaCompra>=fechamento) dPrimeiroPgto.setMonth(dPrimeiroPgto.getMonth()+1);
         for(let i=0;i<n;i++){
           const dPgto=new Date(dPrimeiroPgto);
           dPgto.setMonth(dPgto.getMonth()+i);
+          const maParcela=mesAnoStr(dPgto.getMonth(),dPgto.getFullYear());
           await DB.addLancamento({
             tipo:'credito',categoriaId:catId,subcat,descricao:desc,
-            mesAno:mesAnoCompra,           // ← sempre no mês da compra
-            mesPagamento:mesAnoStr(dPgto.getMonth(),dPgto.getFullYear()),
+            mesAno:maParcela,              // ← mês em que a parcela é cobrada
+            mesAnoCompra,                  // ← mês original da compra (para referência)
             valorTotal:valor,totalParcelas:n,valorParcela,
             parcela:i+1,cartaoId,data:dataCompra,grupoId,
           });
         }
-        state.lancamentos=await DB.getLancamentos(mesAnoCompra);
-        // Se mês atual != mês da compra, recarregar mês atual
-        if(mesAnoCompra!==mesAno) state.lancamentos=await DB.getLancamentos(mesAno);
-        toast(`Compra salva — ${n} parcela${n>1?'s':''} lançadas em ${MONTHS[dCompra.getMonth()]}`,'ok');
+        state.lancamentos=await DB.getLancamentos(mesAno);
+        toast(`Compra salva — ${n} parcela${n>1?'s':''} distribuídas a partir de ${MONTHS[dPrimeiroPgto.getMonth()]}`,'ok');
         goBack(); return;
       } else {
         obj.valorTotal=valor;obj.totalParcelas=n;obj.valorParcela=valorParcela;obj.cartaoId=cartaoId;obj.data=dataCompra;
@@ -882,6 +891,26 @@ const App = (() => {
           <span style="font-size:14px;font-weight:600;color:var(--text)">Saldo final</span>
           <span style="font-size:15px;font-weight:600;font-family:'DM Mono',monospace;color:var(--text)">${fmtMoney(saldoFinal)}</span>
         </div>
+      </div>
+      <div class="card" style="padding:20px">
+        <div class="section-label" style="padding:0;margin-bottom:14px">Limite dos cartões</div>
+        ${state.cartoes.map(c=>{
+          const fatMes=creditoPorCartao[c.id]||0;
+          const pct=c.limite?Math.min((fatMes/c.limite)*100,100):0;
+          return `<div style="margin-bottom:14px">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+              <span style="font-size:14px;font-weight:500;color:${c.cor}">${c.nome}</span>
+              <span style="font-size:13px;font-family:'DM Mono',monospace;color:var(--text2)">${fmtMoney(fatMes)} <span style="color:var(--text3)">/ ${fmtMoney(c.limite||0)}</span></span>
+            </div>
+            <div style="height:8px;background:var(--bg4);border-radius:4px;overflow:hidden">
+              <div style="height:100%;width:${pct}%;background:${c.cor};border-radius:4px;transition:width 0.4s"></div>
+            </div>
+            <div style="display:flex;justify-content:space-between;margin-top:4px">
+              <span style="font-size:11px;color:var(--text3)">${pct.toFixed(1)}% utilizado</span>
+              <span style="font-size:11px;color:var(--text3)">${fmtMoney((c.limite||0)-fatMes)} disponível</span>
+            </div>
+          </div>`;
+        }).join('')}
       </div>
       <div style="height:8px"></div>`;
 

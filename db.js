@@ -53,21 +53,29 @@ const DB = (() => {
   async function deleteFixoTemplate(id) { await open(); return del('fixos_template', id); }
 
   // Garante instâncias de gastos fixos E entradas fixas no mês
-  async function ensureFixosMes(mesAno) {
+  // mesAnoMinimo: mês a partir do qual o template foi criado (não criar em meses anteriores)
+  async function ensureFixosMes(mesAno, mesAnoAtual) {
     await open();
     const templates = await all('fixos_template');
     if (!templates.length) return;
+
+    // Não criar lançamentos em meses anteriores ao mês atual real
+    const hoje = mesAnoAtual || mesAno;
+    if (mesAno < hoje) return; // mês passado — não replicar automaticamente
+
     const existentes = await byIndex('lancamentos','mesAno',mesAno);
     const existTemplIds = new Set(existentes.filter(l=>l.templateId).map(l=>l.templateId));
-    // Extrair mês e ano do mesAno (ex: "04-2026")
     const [mesStr, anoStr] = mesAno.split('-');
-    const mes = parseInt(mesStr) - 1; // 0-based
+    const mes = parseInt(mesStr) - 1;
     const ano = parseInt(anoStr);
 
     for (const tmpl of templates) {
       if (existTemplIds.has(tmpl.id)) continue;
+      // Só criar se o template foi criado antes ou no mesmo mês
+      // (tmpl.criadoEm é timestamp; comparar com mesAno)
+      if (tmpl.mesAnoMinimo && mesAno < tmpl.mesAnoMinimo) continue;
+
       if (tmpl.tipo === 'entrada_fixa') {
-        // data = dia fixo no mês atual
         const dia = tmpl.diaDoMes || 1;
         const dataStr = `${ano}-${String(mes+1).padStart(2,'0')}-${String(dia).padStart(2,'0')}`;
         await put('lancamentos', {
@@ -78,12 +86,11 @@ const DB = (() => {
           descricao: tmpl.descricao,
           valor: tmpl.valor,
           data: dataStr,
-          fixo: true, // marca como entrada fixa
+          fixo: true,
           mesAno,
           criadoEm: Date.now(),
         });
       } else {
-        // gasto fixo
         await put('lancamentos', {
           tipo: 'fixo',
           templateId: tmpl.id,
