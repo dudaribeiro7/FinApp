@@ -1750,8 +1750,7 @@ const App = (() => {
 
       if (progBar) progBar.style.width = '100%';
       if (progMsg) progMsg.textContent = `✅ ${result.total} lançamentos importados de ${result.meses} meses!`;
-      if (logText) logText.textContent = Sheets.log.join('
-');
+      if (logText) logText.textContent = Sheets.log.join('\n');
 
       // Recarregar dados
       state.categorias = await DB.getCategorias();
