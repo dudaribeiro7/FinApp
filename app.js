@@ -127,6 +127,7 @@ const App = (() => {
     if (id==='screen-lancamentos') renderLancamentos();
     if (id==='screen-relatorios') renderRelatorios();
     if (id==='screen-perfil') renderPerfil();
+    if (id==='screen-sheets') renderSheetsScreen();
   }
   function goBack() { gotoScreen(state.prevScreen || 'screen-home'); }
   function novoLancamento() {
@@ -1647,9 +1648,140 @@ const App = (() => {
   /* ══════════════════════════════════════
      INIT
   ══════════════════════════════════════ */
+  function renderSheetsScreen() {
+    const el = document.getElementById('sheets-content');
+    if (!el) return;
+
+    if (Sheets.isAuthenticated()) {
+      el.innerHTML = `
+        <div style="text-align:center;padding:24px 0 20px">
+          <div style="font-size:40px;margin-bottom:12px">✅</div>
+          <div style="font-size:17px;font-weight:600;margin-bottom:6px">Conectado ao Google</div>
+          <div style="font-size:13px;color:var(--text2)">Autorização ativa para leitura do Sheets</div>
+        </div>
+        <div class="field">
+          <div class="field-label">URL da planilha</div>
+          <input type="url" id="sheets-url" placeholder="https://docs.google.com/spreadsheets/d/..."
+            style="font-size:13px" value="${localStorage.getItem('last_sheets_url')||''}">
+          <div style="font-size:11px;color:var(--text3);margin-top:6px">Cole a URL da sua planilha do Google Sheets</div>
+        </div>
+        <div id="sheets-preview" style="display:none;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--rs);padding:14px;margin-bottom:16px">
+          <div style="font-size:13px;color:var(--text2)" id="sheets-preview-text"></div>
+        </div>
+        <div id="sheets-progress" style="display:none;margin-bottom:16px">
+          <div style="background:var(--bg3);border-radius:var(--rs);padding:14px">
+            <div style="font-size:13px;color:var(--text2);margin-bottom:10px" id="sheets-progress-msg">Processando...</div>
+            <div style="height:6px;background:var(--bg4);border-radius:3px;overflow:hidden">
+              <div id="sheets-progress-bar" style="height:100%;width:0%;background:var(--accent);border-radius:3px;transition:width 0.3s"></div>
+            </div>
+          </div>
+        </div>
+        <div id="sheets-log" style="display:none;background:var(--bg3);border-radius:var(--rs);padding:14px;margin-bottom:16px;max-height:200px;overflow-y:auto">
+          <div style="font-size:10px;color:var(--text3);letter-spacing:0.5px;text-transform:uppercase;margin-bottom:8px">Log de importação</div>
+          <div id="sheets-log-text" style="font-size:12px;color:var(--text2);font-family:'DM Mono',monospace;white-space:pre-wrap;line-height:1.6"></div>
+        </div>
+        <button class="action-btn primary" id="sheets-import-btn" onclick="App.sheetsImportar()">
+          <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Importar dados
+        </button>
+        <button class="action-btn secondary" onclick="App.sheetsLogout()">Desconectar do Google</button>
+        <div style="font-size:11px;color:var(--text3);text-align:center;margin-top:12px;line-height:1.6">
+          A importação não apaga seus dados existentes.<br>Lançamentos duplicados podem aparecer se importar mais de uma vez.
+        </div>
+        <div style="height:20px"></div>`;
+    } else {
+      el.innerHTML = `
+        <div style="text-align:center;padding:32px 0 24px">
+          <div style="font-size:48px;margin-bottom:16px">📊</div>
+          <div style="font-size:18px;font-weight:600;margin-bottom:10px;letter-spacing:-0.3px">Migrar do Google Sheets</div>
+          <div style="font-size:14px;color:var(--text2);line-height:1.6;max-width:300px;margin:0 auto">
+            Importe todo o seu histórico financeiro de uma vez. Após isso, o app funciona de forma independente.
+          </div>
+        </div>
+        <div style="background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--rs);padding:16px;margin-bottom:20px">
+          <div style="font-size:13px;font-weight:500;margin-bottom:8px">O que será importado:</div>
+          <div style="font-size:13px;color:var(--text2);line-height:1.8">
+            ✅ Entradas e gastos de Agosto 2024 até hoje<br>
+            ✅ Gastos fixos com status pago/não pago<br>
+            ✅ Compras no crédito (Nubank, Itaú, C6)<br>
+            ✅ Saldos iniciais de cada mês<br>
+            ✅ Categorias mapeadas automaticamente
+          </div>
+        </div>
+        <button class="action-btn primary" onclick="App.sheetsLogin()">
+          <svg viewBox="0 0 24 24"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+          Conectar com Google
+        </button>
+        <div style="font-size:11px;color:var(--text3);text-align:center;margin-top:12px;line-height:1.6">
+          Usamos OAuth 2.0. Apenas leitura — nunca modificamos sua planilha.
+        </div>
+        <div style="height:20px"></div>`;
+    }
+  }
+
+  function sheetsLogin() { Sheets.startOAuth(); }
+  function sheetsLogout() { Sheets.logout(); renderSheetsScreen(); }
+
+  async function sheetsImportar() {
+    const urlEl = document.getElementById('sheets-url');
+    const url = urlEl?.value?.trim();
+    if (!url) { toast('Cole a URL da planilha', 'err'); return; }
+    const id = Sheets.extractSpreadsheetId(url);
+    if (!id) { toast('URL inválida — cole a URL completa do Google Sheets', 'err'); return; }
+    localStorage.setItem('last_sheets_url', url);
+
+    const btn = document.getElementById('sheets-import-btn');
+    const progEl = document.getElementById('sheets-progress');
+    const progMsg = document.getElementById('sheets-progress-msg');
+    const progBar = document.getElementById('sheets-progress-bar');
+    const logEl = document.getElementById('sheets-log');
+    const logText = document.getElementById('sheets-log-text');
+
+    if (btn) btn.disabled = true;
+    if (progEl) progEl.style.display = '';
+    if (logEl) logEl.style.display = '';
+
+    try {
+      const result = await Sheets.importar(id, (p) => {
+        if (progMsg) progMsg.textContent = p.msg;
+        if (progBar && p.progress) progBar.style.width = (p.progress * 100).toFixed(0) + '%';
+        if (logText) logText.textContent = Sheets.log.join('
+');
+      });
+
+      if (progBar) progBar.style.width = '100%';
+      if (progMsg) progMsg.textContent = `✅ ${result.total} lançamentos importados de ${result.meses} meses!`;
+      if (logText) logText.textContent = Sheets.log.join('
+');
+
+      // Recarregar dados
+      state.categorias = await DB.getCategorias();
+      state.cartoes = await DB.getCartoes();
+      state.lancamentos = await DB.getLancamentos(mesAnoStr(state.currentMonth, state.currentYear));
+
+      toast(`Importação concluída! ${result.total} lançamentos`, 'ok', 4000);
+    } catch(e) {
+      if (progMsg) progMsg.textContent = '❌ Erro: ' + e.message;
+      toast('Erro na importação: ' + e.message, 'err', 5000);
+      console.error(e);
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
   async function init(){
     await DB.open();
     await DB.seedDefaults();
+    // Verificar se voltou do OAuth do Google
+    if (Sheets.handleOAuthCallback()) {
+      toast('Conectado ao Google com sucesso!', 'ok');
+      await loadData();
+      for(const c of state.cartoes) await atualizarFaturaFixa(c.id);
+      await loadData();
+      gotoScreen('screen-sheets', false);
+      renderSheetsScreen();
+      return;
+    }
     await loadData();
     // Recalcular faturas automáticas para todos os cartões
     for(const c of state.cartoes) await atualizarFaturaFixa(c.id);
@@ -1672,6 +1804,7 @@ const App = (() => {
     openModal,closeModal,_selColor,_onCustomColor,
     _saveCategoria,_saveSubcat,_saveCartao,
     init,
+    renderSheetsScreen, sheetsLogin, sheetsLogout, sheetsImportar,
   };
 })();
 App.init();
