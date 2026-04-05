@@ -1,11 +1,8 @@
 /* ═══════════════════════════════════════════
-   db.js — IndexedDB layer
-   Stores: lancamentos, categorias, cartoes, config
+   db.js — IndexedDB layer v2
 ═══════════════════════════════════════════ */
-
 const DB = (() => {
-  const NAME = 'financas_app';
-  const VERSION = 1;
+  const NAME = 'financas_app', VERSION = 2;
   let _db = null;
 
   async function open() {
@@ -14,251 +11,140 @@ const DB = (() => {
       const req = indexedDB.open(NAME, VERSION);
       req.onupgradeneeded = e => {
         const db = e.target.result;
-
-        // lancamentos
         if (!db.objectStoreNames.contains('lancamentos')) {
           const s = db.createObjectStore('lancamentos', { keyPath: 'id', autoIncrement: true });
           s.createIndex('mesAno', 'mesAno');
           s.createIndex('tipo', 'tipo');
           s.createIndex('criadoEm', 'criadoEm');
+          s.createIndex('templateId', 'templateId');
+        } else {
+          const s = e.target.transaction.objectStore('lancamentos');
+          if (!s.indexNames.contains('templateId')) s.createIndex('templateId', 'templateId');
         }
-
-        // categorias
-        if (!db.objectStoreNames.contains('categorias')) {
-          db.createObjectStore('categorias', { keyPath: 'id', autoIncrement: true });
-        }
-
-        // cartoes
-        if (!db.objectStoreNames.contains('cartoes')) {
-          db.createObjectStore('cartoes', { keyPath: 'id', autoIncrement: true });
-        }
-
-        // config (key-value)
-        if (!db.objectStoreNames.contains('config')) {
-          db.createObjectStore('config', { keyPath: 'key' });
-        }
+        if (!db.objectStoreNames.contains('categorias')) db.createObjectStore('categorias', { keyPath: 'id', autoIncrement: true });
+        if (!db.objectStoreNames.contains('cartoes')) db.createObjectStore('cartoes', { keyPath: 'id', autoIncrement: true });
+        if (!db.objectStoreNames.contains('config')) db.createObjectStore('config', { keyPath: 'key' });
+        if (!db.objectStoreNames.contains('fixos_template')) db.createObjectStore('fixos_template', { keyPath: 'id', autoIncrement: true });
       };
       req.onsuccess = e => { _db = e.target.result; res(_db); };
       req.onerror = e => rej(e.target.error);
     });
   }
 
-  function tx(store, mode = 'readonly') {
-    return _db.transaction(store, mode).objectStore(store);
-  }
+  function tx(store, mode='readonly') { return _db.transaction(store, mode).objectStore(store); }
+  function all(store) { return new Promise((res,rej) => { const r = tx(store).getAll(); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }); }
+  function get(store, key) { return new Promise((res,rej) => { const r = tx(store).get(key); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }); }
+  function put(store, obj) { return new Promise((res,rej) => { const r = tx(store,'readwrite').put(obj); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }); }
+  function del(store, key) { return new Promise((res,rej) => { const r = tx(store,'readwrite').delete(key); r.onsuccess=()=>res(); r.onerror=()=>rej(r.error); }); }
+  function byIndex(store, idx, val) { return new Promise((res,rej) => { const r = tx(store).index(idx).getAll(val); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }); }
 
-  function all(store) {
-    return new Promise((res, rej) => {
-      const req = tx(store).getAll();
-      req.onsuccess = () => res(req.result);
-      req.onerror = () => rej(req.error);
-    });
-  }
+  async function getConfig(key, def=null) { const r = await get('config', key); return r ? r.value : def; }
+  async function setConfig(key, value) { await put('config', {key, value}); }
 
-  function get(store, key) {
-    return new Promise((res, rej) => {
-      const req = tx(store).get(key);
-      req.onsuccess = () => res(req.result);
-      req.onerror = () => rej(req.error);
-    });
-  }
+  async function getLancamentos(mesAno) { await open(); return byIndex('lancamentos','mesAno',mesAno); }
+  async function getAllLancamentos() { await open(); return all('lancamentos'); }
+  async function addLancamento(obj) { await open(); obj.criadoEm = Date.now(); return put('lancamentos', obj); }
+  async function updateLancamento(obj) { await open(); return put('lancamentos', obj); }
+  async function deleteLancamento(id) { await open(); return del('lancamentos', id); }
+  async function getLancamentosByTemplateId(tid) { await open(); return byIndex('lancamentos','templateId',tid); }
 
-  function put(store, obj) {
-    return new Promise((res, rej) => {
-      const req = tx(store, 'readwrite').put(obj);
-      req.onsuccess = () => res(req.result);
-      req.onerror = () => rej(req.error);
-    });
-  }
+  async function getFixosTemplates() { await open(); return all('fixos_template'); }
+  async function saveFixoTemplate(obj) { await open(); return put('fixos_template', obj); }
+  async function deleteFixoTemplate(id) { await open(); return del('fixos_template', id); }
 
-  function del(store, key) {
-    return new Promise((res, rej) => {
-      const req = tx(store, 'readwrite').delete(key);
-      req.onsuccess = () => res();
-      req.onerror = () => rej(req.error);
-    });
-  }
-
-  function byIndex(store, indexName, value) {
-    return new Promise((res, rej) => {
-      const req = tx(store).index(indexName).getAll(value);
-      req.onsuccess = () => res(req.result);
-      req.onerror = () => rej(req.error);
-    });
-  }
-
-  async function getConfig(key, def = null) {
-    const r = await get('config', key);
-    return r ? r.value : def;
-  }
-
-  async function setConfig(key, value) {
-    await put('config', { key, value });
-  }
-
-  // ── Lancamentos ──────────────────────────
-
-  async function getLancamentos(mesAno) {
+  async function ensureFixosMes(mesAno) {
     await open();
-    return byIndex('lancamentos', 'mesAno', mesAno);
+    const templates = await all('fixos_template');
+    if (!templates.length) return;
+    const existentes = await byIndex('lancamentos','mesAno',mesAno);
+    const existTemplIds = new Set(existentes.filter(l=>l.tipo==='fixo'&&l.templateId).map(l=>l.templateId));
+    for (const tmpl of templates) {
+      if (!existTemplIds.has(tmpl.id)) {
+        await put('lancamentos', {
+          tipo:'fixo', templateId:tmpl.id,
+          categoriaId:tmpl.categoriaId, subcat:tmpl.subcat,
+          descricao:tmpl.descricao, valor:tmpl.valor,
+          pagamento:tmpl.pagamento, cartaoId:tmpl.cartaoId,
+          pago:false, mesAno, criadoEm:Date.now(),
+        });
+      }
+    }
   }
 
-  async function getAllLancamentos() {
-    await open();
-    return all('lancamentos');
-  }
+  async function getCategorias() { await open(); return all('categorias'); }
+  async function saveCategoria(obj) { await open(); return put('categorias', obj); }
+  async function deleteCategoria(id) { await open(); return del('categorias', id); }
 
-  async function addLancamento(obj) {
-    await open();
-    obj.criadoEm = Date.now();
-    return put('lancamentos', obj);
-  }
-
-  async function updateLancamento(obj) {
-    await open();
-    return put('lancamentos', obj);
-  }
-
-  async function deleteLancamento(id) {
-    await open();
-    return del('lancamentos', id);
-  }
-
-  // ── Categorias ────────────────────────────
-
-  async function getCategorias() {
-    await open();
-    return all('categorias');
-  }
-
-  async function saveCategoria(obj) {
-    await open();
-    return put('categorias', obj);
-  }
-
-  async function deleteCategoria(id) {
-    await open();
-    return del('categorias', id);
-  }
-
-  // ── Cartoes ───────────────────────────────
-
-  async function getCartoes() {
-    await open();
-    return all('cartoes');
-  }
-
-  async function saveCartao(obj) {
-    await open();
-    return put('cartoes', obj);
-  }
-
-  async function deleteCartao(id) {
-    await open();
-    return del('cartoes', id);
-  }
-
-  // ── Config ────────────────────────────────
-
-  async function getConfigAll() {
-    await open();
-    return all('config');
-  }
-
-  // ── Seed: dados padrão ───────────────────
+  async function getCartoes() { await open(); return all('cartoes'); }
+  async function saveCartao(obj) { await open(); return put('cartoes', obj); }
+  async function deleteCartao(id) { await open(); return del('cartoes', id); }
 
   async function seedDefaults() {
     await open();
     const cats = await all('categorias');
-    if (cats.length > 0) return; // já tem dados
-
-    const defaultCats = [
-      // saídas
-      { tipo: 'saida', nome: 'Transporte', emoji: '🚗', cor: '#fb923c', subcats: ['Carro', 'Uber', 'Ônibus'] },
-      { tipo: 'saida', nome: 'Alimentação', emoji: '🍽️', cor: '#4ade80', subcats: ['Supermercado', 'Restaurante'] },
-      { tipo: 'saida', nome: 'Casa', emoji: '🏠', cor: '#60a5fa', subcats: ['Moradia'] },
-      { tipo: 'saida', nome: 'Saúde e Bem-estar', emoji: '❤️', cor: '#f87171', subcats: ['Saúde', 'Beleza'] },
-      { tipo: 'saida', nome: 'Entretenimento', emoji: '🎬', cor: '#a78bfa', subcats: ['Streaming', 'Lazer'] },
-      { tipo: 'saida', nome: 'Educação', emoji: '📚', cor: '#fbbf24', subcats: ['Estudos'] },
-      { tipo: 'saida', nome: 'Finanças', emoji: '💰', cor: '#34d399', subcats: ['Impostos e taxas', 'Cartão de crédito'] },
-      { tipo: 'saida', nome: 'Compras', emoji: '🛍️', cor: '#f472b6', subcats: ['Roupas', 'Tech', 'Presentes'] },
-      { tipo: 'saida', nome: 'Viagens', emoji: '✈️', cor: '#818cf8', subcats: [] },
-      // entradas
-      { tipo: 'entrada', nome: 'Trabalho', emoji: '💼', cor: '#4ade80', subcats: [] },
-      { tipo: 'entrada', nome: 'Presentes', emoji: '🎁', cor: '#fbbf24', subcats: [] },
-      { tipo: 'entrada', nome: 'Vendas', emoji: '🛒', cor: '#60a5fa', subcats: [] },
-      { tipo: 'entrada', nome: 'Outros', emoji: '📦', cor: '#9ca3af', subcats: [] },
+    if (cats.length > 0) return;
+    const dc = [
+      {tipo:'saida',nome:'Transporte',emoji:'🚗',cor:'#fb923c',subcats:[{nome:'Carro',emoji:'🚗',cor:'#fb923c'},{nome:'Uber',emoji:'🚕',cor:'#f59e0b'},{nome:'Ônibus',emoji:'🚌',cor:'#d97706'}]},
+      {tipo:'saida',nome:'Alimentação',emoji:'🍽️',cor:'#4ade80',subcats:[{nome:'Supermercado',emoji:'🛒',cor:'#22c55e'},{nome:'Restaurante',emoji:'🍝',cor:'#16a34a'}]},
+      {tipo:'saida',nome:'Casa',emoji:'🏠',cor:'#60a5fa',subcats:[{nome:'Moradia',emoji:'🏡',cor:'#3b82f6'}]},
+      {tipo:'saida',nome:'Saúde e Bem-estar',emoji:'❤️',cor:'#f87171',subcats:[{nome:'Saúde',emoji:'💊',cor:'#ef4444'},{nome:'Beleza',emoji:'💄',cor:'#f472b6'}]},
+      {tipo:'saida',nome:'Entretenimento',emoji:'🎬',cor:'#a78bfa',subcats:[{nome:'Streaming',emoji:'🎬',cor:'#8b5cf6'},{nome:'Lazer',emoji:'🎉',cor:'#7c3aed'}]},
+      {tipo:'saida',nome:'Educação',emoji:'📚',cor:'#fbbf24',subcats:[{nome:'Estudos',emoji:'📖',cor:'#f59e0b'}]},
+      {tipo:'saida',nome:'Finanças',emoji:'💰',cor:'#34d399',subcats:[{nome:'Impostos e taxas',emoji:'💰',cor:'#10b981'},{nome:'Cartão de crédito',emoji:'💳',cor:'#059669'}]},
+      {tipo:'saida',nome:'Compras',emoji:'🛍️',cor:'#f472b6',subcats:[{nome:'Roupas',emoji:'👗',cor:'#ec4899'},{nome:'Tech',emoji:'💻',cor:'#6366f1'},{nome:'Presentes',emoji:'🎁',cor:'#f43f5e'}]},
+      {tipo:'saida',nome:'Viagens',emoji:'✈️',cor:'#818cf8',subcats:[]},
+      {tipo:'entrada',nome:'Trabalho',emoji:'💼',cor:'#4ade80',subcats:[]},
+      {tipo:'entrada',nome:'Presentes',emoji:'🎁',cor:'#fbbf24',subcats:[]},
+      {tipo:'entrada',nome:'Vendas',emoji:'🛒',cor:'#60a5fa',subcats:[]},
+      {tipo:'entrada',nome:'Outros',emoji:'📦',cor:'#9ca3af',subcats:[]},
     ];
-
-    for (const c of defaultCats) {
-      await put('categorias', c);
-    }
-
-    const defaultCartoes = [
-      { nome: 'Nubank', cor: '#a78bfa', fechamento: 4, vencimento: 10, limite: 3000 },
-      { nome: 'Itaú', cor: '#fb923c', fechamento: 8, vencimento: 15, limite: 5000 },
-      { nome: 'C6', cor: '#60a5fa', fechamento: 15, vencimento: 22, limite: 2000 },
+    for (const c of dc) await put('categorias', c);
+    const dca = [
+      {nome:'Nubank',cor:'#a78bfa',fechamento:4,vencimento:10,limite:3000},
+      {nome:'Itaú',cor:'#fb923c',fechamento:8,vencimento:15,limite:5000},
+      {nome:'C6',cor:'#60a5fa',fechamento:15,vencimento:22,limite:2000},
     ];
-
-    for (const c of defaultCartoes) {
-      await put('cartoes', c);
-    }
-
-    // config padrão
-    await put('config', { key: 'notif_cartao', value: true });
-    await put('config', { key: 'notif_cartao_dias', value: 3 });
-    await put('config', { key: 'notif_orcamento', value: true });
-    await put('config', { key: 'notif_orcamento_pct', value: 80 });
-    await put('config', { key: 'notif_resumo', value: true });
-    await put('config', { key: 'notif_semdata', value: true });
-    await put('config', { key: 'notif_fixos', value: true });
+    for (const c of dca) await put('cartoes', c);
+    const cfgs = [
+      ['notif_cartao',true],['notif_cartao_dias',3],['notif_orcamento',true],
+      ['notif_orcamento_pct',80],['notif_resumo',true],['notif_semdata',true],['notif_fixos',true]
+    ];
+    for (const [k,v] of cfgs) await put('config', {key:k, value:v});
   }
-
-  // ── Export / Import ───────────────────────
 
   async function exportAll() {
     await open();
-    const [lancamentos, categorias, cartoes, config] = await Promise.all([
-      all('lancamentos'), all('categorias'), all('cartoes'), all('config')
+    const [lancamentos,categorias,cartoes,config,fixos_template] = await Promise.all([
+      all('lancamentos'),all('categorias'),all('cartoes'),all('config'),all('fixos_template')
     ]);
-    return JSON.stringify({ lancamentos, categorias, cartoes, config, exportedAt: new Date().toISOString() }, null, 2);
+    return JSON.stringify({lancamentos,categorias,cartoes,config,fixos_template,exportedAt:new Date().toISOString()},null,2);
   }
 
   async function importAll(json) {
     await open();
     const data = JSON.parse(json);
-    const stores = ['lancamentos', 'categorias', 'cartoes', 'config'];
-
-    for (const store of stores) {
+    for (const store of ['lancamentos','categorias','cartoes','config','fixos_template']) {
       if (!data[store]) continue;
-      // clear store
-      await new Promise((res, rej) => {
-        const req = tx(store, 'readwrite').clear();
-        req.onsuccess = res; req.onerror = rej;
-      });
-      for (const item of data[store]) {
-        await put(store, item);
-      }
+      await new Promise((res,rej) => { const r=tx(store,'readwrite').clear(); r.onsuccess=res; r.onerror=rej; });
+      for (const item of data[store]) await put(store, item);
     }
   }
 
   async function clearAll() {
     await open();
-    const stores = ['lancamentos', 'categorias', 'cartoes', 'config'];
-    for (const store of stores) {
-      await new Promise((res, rej) => {
-        const req = tx(store, 'readwrite').clear();
-        req.onsuccess = res; req.onerror = rej;
-      });
+    for (const store of ['lancamentos','categorias','cartoes','config','fixos_template']) {
+      await new Promise((res,rej) => { const r=tx(store,'readwrite').clear(); r.onsuccess=res; r.onerror=rej; });
     }
   }
 
   return {
     open, seedDefaults,
     getLancamentos, getAllLancamentos, addLancamento, updateLancamento, deleteLancamento,
+    getLancamentosByTemplateId,
+    getFixosTemplates, saveFixoTemplate, deleteFixoTemplate, ensureFixosMes,
     getCategorias, saveCategoria, deleteCategoria,
     getCartoes, saveCartao, deleteCartao,
-    getConfig, setConfig, getConfigAll,
+    getConfig, setConfig,
     exportAll, importAll, clearAll,
   };
 })();
