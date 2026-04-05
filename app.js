@@ -650,11 +650,12 @@ const App = (() => {
     const dCompra=new Date(data+'T12:00:00');
     const diaCompra=dCompra.getDate();
     // Mês base da fatura (mesma lógica do save)
+    // dia >= fechamento → fatura deste mês; dia < fechamento → fatura do mês anterior
     const dMesBasePrev = new Date(dCompra);
-    if(diaCompra>=fechamento) dMesBasePrev.setMonth(dMesBasePrev.getMonth()+1);
-    const faturaLabel = diaCompra<fechamento
-      ? `fatura de ${MONTHS[dMesBasePrev.getMonth()]} (dia ${diaCompra} < fechamento ${fechamento})`
-      : `fatura de ${MONTHS[dMesBasePrev.getMonth()]} (dia ${diaCompra} >= fechamento ${fechamento})`;
+    if(diaCompra < fechamento) dMesBasePrev.setMonth(dMesBasePrev.getMonth()-1);
+    const faturaLabel = diaCompra >= fechamento
+      ? `fatura de ${MONTHS[dMesBasePrev.getMonth()]} (dia ${diaCompra} ≥ fechamento ${fechamento})`
+      : `fatura de ${MONTHS[dMesBasePrev.getMonth()]} (dia ${diaCompra} < fechamento ${fechamento})`;
     const parcela=val/n;
     let rows='';
     for(let i=0;i<Math.min(n,6);i++){
@@ -725,12 +726,12 @@ const App = (() => {
       const diaCompra=dCompra.getDate();
       const valorParcela=valor/n;
       // Lançamento SEMPRE fica no mês da compra (item 6)
-      // Determinar o mês base da compra:
-      // compra ANTES do fechamento → fatura do mês atual (mesAnoCompra = mês da compra)
-      // compra NO DIA ou DEPOIS do fechamento → fatura do mês seguinte
+      // Determinar o mês base da fatura:
+      // dia_compra >= dia_fechamento → fatura do MÊS DA COMPRA (aparece neste mês)
+      // dia_compra <  dia_fechamento → fatura do MÊS ANTERIOR (aparece no mês anterior)
       let dMesBase = new Date(dCompra);
-      if (diaCompra >= fechamento) {
-        dMesBase.setMonth(dMesBase.getMonth() + 1);
+      if (diaCompra < fechamento) {
+        dMesBase.setMonth(dMesBase.getMonth() - 1);
       }
       const mesAnoCompra = mesAnoStr(dMesBase.getMonth(), dMesBase.getFullYear());
       if(!state.editingId){
