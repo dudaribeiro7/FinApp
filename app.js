@@ -452,10 +452,17 @@ const App = (() => {
       const subTabs=[{key:'todos_saidas',label:'Todos'},{key:'debito',label:'Débito'},
         ...state.cartoes.map(c=>({key:'credito_'+c.id,label:c.nome,cor:c.cor}))];
       const activeKey=state.lancSubTab||'todos_saidas';
-      subTabsHtml=`<div class="sub-tabs">
-        ${subTabs.map(t=>`<div class="sub-tab ${activeKey===t.key?'active':''}" onclick="App.setLancSubTab('${t.key}')" ${t.cor&&activeKey===t.key?`style="background:${t.cor}20;border-color:${t.cor};color:${t.cor}"`:''}>
-          ${t.cor?`<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${t.cor};margin-right:4px;vertical-align:middle"></span>`:''}${t.label}</div>`).join('')}
-      </div>`;
+      const gridCols = subTabs.length <= 3 ? subTabs.length : subTabs.length <= 6 ? 3 : 4;
+      subTabsHtml = '<div style="display:grid;grid-template-columns:repeat('+gridCols+',1fr);gap:6px;padding:0 20px 12px;flex-shrink:0">' +
+        subTabs.map(t => {
+          const isActive = activeKey === t.key;
+          const bg = isActive ? (t.cor || 'var(--accent)') : 'var(--bg3)';
+          const bc = isActive ? (t.cor || 'var(--accent)') : 'var(--border2)';
+          const tx = isActive ? '#fff' : 'var(--text2)';
+          const dot = t.cor ? '<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:'+(isActive?'#fff':t.cor)+';flex-shrink:0"></span>' : '';
+          return '<div onclick="App.setLancSubTab(''+t.key+'')" style="display:flex;align-items:center;justify-content:center;gap:5px;padding:7px 6px;border-radius:12px;border:0.5px solid '+bc+';background:'+bg+';cursor:pointer;transition:all 0.15s">'+dot+'<span style="font-size:12px;font-weight:500;color:'+tx+'">'+t.label+'</span></div>';
+        }).join('') +
+      '</div>';
       if (activeKey==='debito') lancs=lancs.filter(l=>l.tipo==='debito'||(l.tipo==='fixo'&&l.pagamento==='debito'));
       else if (activeKey.startsWith('credito_')) {
         const cid=parseInt(activeKey.replace('credito_',''));
