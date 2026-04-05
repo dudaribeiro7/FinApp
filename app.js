@@ -1745,8 +1745,7 @@ const App = (() => {
       const result = await Sheets.importar(id, (p) => {
         if (progMsg) progMsg.textContent = p.msg;
         if (progBar && p.progress) progBar.style.width = (p.progress * 100).toFixed(0) + '%';
-        if (logText) logText.textContent = Sheets.log.join('
-');
+        if (logText) logText.textContent = Sheets.log.join('\n');
       });
 
       if (progBar) progBar.style.width = '100%';
