@@ -150,14 +150,23 @@ const App = (() => {
     return getSaldoFinalMesFechado(prevM, prevY, allLancs);
   }
 
-  // Calcula saldo final de um mês já encerrado (considera tudo como confirmado)
+  // Calcula saldo final de um mês considerando APENAS lançamentos efetivados
+  // Para meses passados: entrada efetivada = data <= último dia do mês
+  // Para mês atual: entrada efetivada = data <= hoje
   async function getSaldoFinalMesFechado(m, y, allLancs) {
     const key = mesAnoStr(m, y);
     const lancs = allLancs ? allLancs.filter(l=>l.mesAno===key) : await DB.getLancamentos(key);
     const saldoIni = await getSaldoInicialMes(m, y);
-    // Todas as entradas do mês (independente da data, já que o mês encerrou)
-    const entradas = lancs.filter(l=>l.tipo==='entrada').reduce((s,l)=>s+(l.valor||0),0);
-    // Saídas débito (avulso + fixo débito pago)
+
+    // Limite de confirmação: para meses já encerrados = último dia do mês; para atual = hoje
+    const hoje = todayStr();
+    const ultimoDiaMes = `${y}-${String(m+1).padStart(2,'0')}-${String(new Date(y,m+1,0).getDate()).padStart(2,'0')}`;
+    const limiteConfirmacao = ultimoDiaMes < hoje ? ultimoDiaMes : hoje;
+
+    // Só entradas com data <= limiteConfirmacao (efetivamente recebidas)
+    const entradas = lancs.filter(l=>l.tipo==='entrada' && l.data && l.data<=limiteConfirmacao)
+                          .reduce((s,l)=>s+(l.valor||0),0);
+    // Saídas débito (avulso + fixo débito pago) — sem data, considerar sempre
     const debitos = lancs.filter(l=>l.tipo==='debito').reduce((s,l)=>s+(l.valor||0),0);
     const fixosDeb = lancs.filter(l=>l.tipo==='fixo'&&l.pago&&l.pagamento==='debito').reduce((s,l)=>s+(l.valor||0),0);
     return saldoIni + entradas - debitos - fixosDeb;
@@ -640,19 +649,21 @@ const App = (() => {
     const vencimento=cartao?.vencimento||10;
     const dCompra=new Date(data+'T12:00:00');
     const diaCompra=dCompra.getDate();
-    const entrou=diaCompra<fechamento?'fatura atual':'fatura do próximo mês';
-    // Primeira cobrança
-    const dPrimeiroPgto=new Date(dCompra);
-    if(diaCompra>=fechamento) dPrimeiroPgto.setMonth(dPrimeiroPgto.getMonth()+1);
+    // Mês base da fatura (mesma lógica do save)
+    const dMesBasePrev = new Date(dCompra);
+    if(diaCompra>=fechamento) dMesBasePrev.setMonth(dMesBasePrev.getMonth()+1);
+    const faturaLabel = diaCompra<fechamento
+      ? `fatura de ${MONTHS[dMesBasePrev.getMonth()]} (dia ${diaCompra} < fechamento ${fechamento})`
+      : `fatura de ${MONTHS[dMesBasePrev.getMonth()]} (dia ${diaCompra} >= fechamento ${fechamento})`;
     const parcela=val/n;
     let rows='';
     for(let i=0;i<Math.min(n,6);i++){
-      const d=new Date(dPrimeiroPgto);
+      const d=new Date(dMesBasePrev);
       d.setMonth(d.getMonth()+i);
-      rows+=`<div class="parcela-row"><span class="parcela-mes">${i+1}/${n} · cobrada em ${MONTHS[d.getMonth()]}/${d.getFullYear()}</span><span class="parcela-val">${fmtMoney(parcela)}</span></div>`;
+      rows+=`<div class="parcela-row"><span class="parcela-mes">${i+1}/${n} · ${MONTHS[d.getMonth()]}/${d.getFullYear()}</span><span class="parcela-val">${fmtMoney(parcela)}</span></div>`;
     }
     if(n>6) rows+=`<div class="parcela-row"><span class="parcela-mes" style="color:var(--text3)">+ ${n-6} parcelas...</span></div>`;
-    rows+=`<div class="parcela-info">Lançado em ${MONTHS[dCompra.getMonth()]} · fecha dia ${fechamento} · entra na ${entrou} · vence dia ${vencimento}</div>`;
+    rows+=`<div class="parcela-info">${faturaLabel} · vence dia ${vencimento}</div>`;
     prevEl.innerHTML=`<div class="parcelas-box"><div class="parcelas-box-title">Distribuição das parcelas</div>${rows}</div>`;
   }
   function _getSelectedCatId(){const s=document.querySelector('#cat-grid .cat-chip.sel');return s?parseInt(s.dataset.catid):null;}
@@ -714,26 +725,34 @@ const App = (() => {
       const diaCompra=dCompra.getDate();
       const valorParcela=valor/n;
       // Lançamento SEMPRE fica no mês da compra (item 6)
-      const mesAnoCompra=mesAnoStr(dCompra.getMonth(),dCompra.getFullYear());
+      // Determinar o mês base da compra:
+      // compra ANTES do fechamento → fatura do mês atual (mesAnoCompra = mês da compra)
+      // compra NO DIA ou DEPOIS do fechamento → fatura do mês seguinte
+      let dMesBase = new Date(dCompra);
+      if (diaCompra >= fechamento) {
+        dMesBase.setMonth(dMesBase.getMonth() + 1);
+      }
+      const mesAnoCompra = mesAnoStr(dMesBase.getMonth(), dMesBase.getFullYear());
       if(!state.editingId){
         const grupoId=Date.now();
-        // Cada parcela fica no mês em que será COBRADA na fatura
-        const dPrimeiroPgto=new Date(dCompra);
-        if(diaCompra>=fechamento) dPrimeiroPgto.setMonth(dPrimeiroPgto.getMonth()+1);
+        // Parcela 1 → mesAnoCompra, parcela 2 → mesAnoCompra+1, etc.
         for(let i=0;i<n;i++){
-          const dPgto=new Date(dPrimeiroPgto);
-          dPgto.setMonth(dPgto.getMonth()+i);
-          const maParcela=mesAnoStr(dPgto.getMonth(),dPgto.getFullYear());
+          const dParcela = new Date(dMesBase);
+          dParcela.setMonth(dParcela.getMonth()+i);
+          const maParcela = mesAnoStr(dParcela.getMonth(), dParcela.getFullYear());
           await DB.addLancamento({
             tipo:'credito',categoriaId:catId,subcat,descricao:desc,
-            mesAno:maParcela,              // ← mês em que a parcela é cobrada
-            mesAnoCompra,                  // ← mês original da compra (para referência)
+            mesAno:maParcela,          // mês da fatura onde esta parcela aparece
+            dataCompra:dataCompra,     // data original da compra (para referência)
             valorTotal:valor,totalParcelas:n,valorParcela,
             parcela:i+1,cartaoId,data:dataCompra,grupoId,
           });
         }
         state.lancamentos=await DB.getLancamentos(mesAno);
-        toast(`Compra salva — ${n} parcela${n>1?'s':''} distribuídas a partir de ${MONTHS[dPrimeiroPgto.getMonth()]}`,'ok');
+        const nomesMes = diaCompra<fechamento
+          ? `fatura de ${MONTHS[dMesBase.getMonth()]}`
+          : `fatura de ${MONTHS[dMesBase.getMonth()]} (fecha dia ${fechamento})`;
+        toast(`Compra salva — parcela 1 na ${nomesMes}`,'ok');
         goBack(); return;
       } else {
         obj.valorTotal=valor;obj.totalParcelas=n;obj.valorParcela=valorParcela;obj.cartaoId=cartaoId;obj.data=dataCompra;
