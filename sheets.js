@@ -167,7 +167,7 @@ const Sheets = (() => {
   // ── Encontra categoria pelo nome ──────────
 
   function findCatId(cats, nomecat) {
-    if (!nomecat) return null;
+    if (!nomecat) return { catId: null, subcat: null };
     const n = nomecat.toLowerCase().trim();
     // Busca exata
     let c = cats.find(c => c.nome.toLowerCase() === n);
@@ -198,9 +198,12 @@ const Sheets = (() => {
     // Formato B: Abril 2025 – Março 2026
     // Formato C: Abril 2026+
     let fmt;
-    if (ano < 2025 || (ano === 2025 && mes === 2)) fmt = 'A';
-    else if (ano < 2026 || (ano === 2026 && mes <= 2)) fmt = 'B';
-    else fmt = 'C';
+    // Formato A: apenas Março 2025 (cabeçalho linha 17, sem coluna tipo nos fixos)
+    if (ano === 2025 && mes === 2) fmt = 'A';
+    // Formato C: Abril 2026 em diante
+    else if (ano > 2026 || (ano === 2026 && mes >= 3)) fmt = 'C';
+    // Formato B: todo o resto (Agosto 2024 - Março 2026)
+    else fmt = 'B';
 
     // Buscar todas as células da aba (máximo razoável de linhas)
     let rows;
@@ -217,8 +220,11 @@ const Sheets = (() => {
     let dataStart;
     if (fmt === 'A') dataStart = 17; // linha 18 (0-indexed: 17)
     else if (fmt === 'B') {
-      // linha 17 (Abril-Agosto 2025) ou linha 22 (Outubro 2025-Março 2026)
-      dataStart = (ano === 2025 && mes <= 7) ? 17 : 22;
+      // Abril-Agosto 2025: linha 17 (idx 17)
+      // Outros (incluindo 2024): linha 17 como padrão, exceto Out/25-Mar/26 que usam 22
+      if (ano === 2025 && mes >= 9) dataStart = 22; // Outubro-Dezembro 2025
+      else if (ano === 2026 && mes <= 2) dataStart = 22; // Jan-Mar 2026
+      else dataStart = 17; // 2024 e Abr-Set 2025
     } else {
       dataStart = 22; // linha 23
     }
