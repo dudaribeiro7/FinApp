@@ -312,7 +312,39 @@ const App = (() => {
   }
 
   /* ── Feed item ───────────────────────── */
+  function renderFaturaAutoItem(l, showPagoToggle) {
+    const cartao = getCartaoById(l.faturaCartaoId);
+    const iconHtml = cartao ? (getBancoIconHtml(cartao.nome, 34) || `<span style="font-size:18px">💳</span>`) : '💳';
+    const cor = '#888899';
+    const pago = l.pago;
+    const pagoToggle = showPagoToggle ? `
+      <div class="fixo-pago-toggle ${pago?'pago':''}" onclick="event.stopPropagation();App.toggleFixoPago(${l.id})" title="${pago?'Não pago':'Marcar como pago'}">
+        ${pago?'<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>':'<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/></svg>'}
+      </div>` : '';
+    return `<div class="feed-item fatura-auto" onclick="void(0)" style="cursor:default;opacity:${pago?'0.55':'1'}">
+      ${pagoToggle}
+      <div class="feed-icon" style="background:#88889918;overflow:hidden;padding:0">
+        ${iconHtml}
+      </div>
+      <div class="feed-info">
+        <div class="feed-nome" style="color:var(--text2)">${l.descricao || 'Fatura '+cartao?.nome}</div>
+        <div class="feed-cat" style="display:flex;align-items:center;gap:5px">
+          <span style="font-size:10px;padding:1px 6px;border-radius:4px;background:#88889922;color:#888899">AUTO</span>
+          Pagamento fatura · ${cartao?.nome||'Cartão'}
+        </div>
+      </div>
+      <div class="feed-right">
+        <div class="feed-val" style="color:${cor}">-${fmtMoney(l.valor||0)}</div>
+        ${pago?'<span class="badge" style="background:var(--green-dim);color:var(--green)">pago</span>':'<span class="badge" style="background:#88889922;color:#888899">pendente</span>'}
+      </div>
+    </div>`;
+  }
+
   function renderFeedItem(l, showPagoToggle=false) {
+    // Fatura automática: tratamento especial
+    if (l.autoFatura && l.faturaCartaoId) {
+      return renderFaturaAutoItem(l, showPagoToggle);
+    }
     const cat = getCatById(l.categoriaId);
     const isEntrada = l.tipo==='entrada';
     const isFixo = l.tipo==='fixo';
@@ -571,9 +603,9 @@ const App = (() => {
           <div class="cat-grid" id="payment-grid">
             <div class="cat-chip ${tipoSel==='debito'?'sel':''}" data-pay="debito" onclick="App._selPay(this,'debito')">
               <div class="cat-emoji">🏦</div><div class="cat-name">Débito</div></div>
-            ${state.cartoes.map(c=>`<div class="cat-chip ${tipoSel===String(c.id)?'sel':''}" data-pay="${c.id}" onclick="App._selPay(this,${c.id})">
-              <div class="cat-emoji"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${c.cor}"></span></div>
-              <div class="cat-name">${c.nome}</div></div>`).join('')}
+            ${state.cartoes.map(c=>{const icon=getBancoIconHtml(c.nome,28);return `<div class="cat-chip ${tipoSel===String(c.id)?'sel':''}" data-pay="${c.id}" onclick="App._selPay(this,${c.id})">
+              <div class="cat-emoji" style="height:32px;display:flex;align-items:center;justify-content:center">${icon||`<span style="display:inline-block;width:26px;height:26px;border-radius:6px;background:${c.cor}33;display:flex;align-items:center;justify-content:center;font-size:14px">💳</span>`}</div>
+              <div class="cat-name">${c.nome}</div></div>`;}).join('')}
           </div></div>
         ${campoCat}
         <div class="field"><div class="field-label">Pago este mês?</div>
@@ -613,9 +645,9 @@ const App = (() => {
         <div id="parcelas-preview" style="display:none"></div>
         <div class="field"><div class="field-label">Cartão</div>
           <div class="cat-grid" id="cartao-grid">
-            ${state.cartoes.map(c=>`<div class="cat-chip ${c.id===cartaoSel?'sel':''}" data-cartao="${c.id}" onclick="App._selCartao(this,${c.id})">
-              <div class="cat-emoji"><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:${c.cor};margin-bottom:2px"></span></div>
-              <div class="cat-name">${c.nome}</div></div>`).join('')}
+            ${state.cartoes.map(c=>{const icon=getBancoIconHtml(c.nome,28);return `<div class="cat-chip ${c.id===cartaoSel?'sel':''}" data-cartao="${c.id}" onclick="App._selCartao(this,${c.id})">
+              <div class="cat-emoji" style="height:32px;display:flex;align-items:center;justify-content:center">${icon||`<span style="display:inline-block;width:26px;height:26px;border-radius:6px;background:${c.cor}33;display:flex;align-items:center;justify-content:center;font-size:14px">💳</span>`}</div>
+              <div class="cat-name">${c.nome}</div></div>`;}).join('')}
           </div></div>
         ${campoCat}${campoDesc}
         <button class="submit-btn btn-credito" onclick="App._salvar()">${state.editingId?'Salvar alterações':'Salvar compra'}</button>
@@ -777,6 +809,9 @@ const App = (() => {
           });
         }
         state.lancamentos=await DB.getLancamentos(mesAno);
+        // Atualizar gasto fixo de pagamento de fatura
+        await atualizarFaturaFixa(cartaoId);
+        state.lancamentos=await DB.getLancamentos(mesAno);
         const nomesMes = diaCompra<fechamento
           ? `fatura de ${MONTHS[dMesBase.getMonth()]}`
           : `fatura de ${MONTHS[dMesBase.getMonth()]} (fecha dia ${fechamento})`;
@@ -812,9 +847,14 @@ const App = (() => {
   }
 
   function editLancamento(id){
-    state.editingId=id;
     const l=state.lancamentos.find(x=>x.id===id);
     if(!l) return;
+    // Fatura automática: não editável
+    if(l.autoFatura) {
+      toast('Este lançamento é gerado automaticamente e não pode ser editado','info',3000);
+      return;
+    }
+    state.editingId=id;
     gotoScreen('screen-novo');
     // entrada fixa tem templateId e fixo=true
     setTipoLanc(l.fixo?'entrada_fixa':l.tipo);
@@ -1463,38 +1503,112 @@ const App = (() => {
     const existing=id!==null?getCartaoById(id):null;
     const obj=existing?{...existing,nome,cor,fechamento,vencimento,limite}:{nome,cor,fechamento,vencimento,limite};
     if(id!==null) obj.id=id;
-    await DB.saveCartao(obj);state.cartoes=await DB.getCartoes();
+    const savedId = await DB.saveCartao(obj);
+    state.cartoes=await DB.getCartoes();
+    // Criar gastos fixos de fatura para este cartão em meses futuros
+    const cartaoFinalId = id !== null ? id : savedId;
+    if(cartaoFinalId) await atualizarFaturaFixa(cartaoFinalId);
     closeModal();renderPerfil();toast(id!==null?'Cartão atualizado':'Cartão adicionado','ok');
   }
   // Cria/atualiza o template de "fatura" automático do cartão
   async function _sincronizarFaturaTemplate(cartaoId) {
     const templates = await DB.getFixosTemplates();
-    // Remover template de fatura antigo deste cartão
     const antigo = templates.find(t => t.faturaCartaoId === cartaoId);
     if (antigo) await DB.deleteFixoTemplate(antigo.id);
-    // Criar novo template (será atualizado mensalmente)
+    const mesAnoMinimo = mesAnoStr(new Date().getMonth(), new Date().getFullYear());
     const tmplId = await DB.saveFixoTemplate({
       tipo: 'fatura_cartao',
       faturaCartaoId: cartaoId,
       categoriaId: null,
-      descricao: null,
-      valor: 0, // será calculado dinamicamente
+      descricao: `Fatura ${getCartaoById(cartaoId)?.nome||'Cartão'}`,
+      valor: 0,
       pagamento: String(cartaoId),
       cartaoId: cartaoId,
-      mesAnoMinimo: mesAnoStr(new Date().getMonth(), new Date().getFullYear()),
+      mesAnoMinimo,
       autoFatura: true,
     });
     return tmplId;
   }
 
+  // Recalcula e atualiza o gasto fixo de pagamento de fatura de um cartão
+  // para o mês M+1 com base nos créditos do mês M
+  async function atualizarFaturaFixa(cartaoId) {
+    const allLancs = await DB.getAllLancamentos();
+    const hoje = new Date();
+    const mesAtual = hoje.getMonth();
+    const anoAtual = hoje.getFullYear();
+
+    // Para cada mês que tem lançamentos de crédito neste cartão,
+    // garantir que existe um gasto fixo no mês SEGUINTE com o valor total
+    const mesesComCredito = [...new Set(
+      allLancs.filter(l => l.tipo === 'credito' && l.cartaoId === cartaoId).map(l => l.mesAno)
+    )];
+
+    // Também garantir mês atual e próximo (podem estar vazios agora mas precisam do fixo)
+    const mesAtualKey = mesAnoStr(mesAtual, anoAtual);
+    if (!mesesComCredito.includes(mesAtualKey)) mesesComCredito.push(mesAtualKey);
+
+    for (const mesCredito of mesesComCredito) {
+      // Calcular total de créditos neste mês para este cartão
+      const credsMes = allLancs.filter(l =>
+        l.tipo === 'credito' && l.cartaoId === cartaoId && l.mesAno === mesCredito
+      );
+      const totalFatura = credsMes.reduce((s, l) => s + (l.valorParcela || 0), 0);
+
+      // O pagamento da fatura é no mês seguinte
+      const [mesStr, anoStr] = mesCredito.split('-');
+      const mCred = parseInt(mesStr) - 1;
+      const yCred = parseInt(anoStr);
+      const dPgto = new Date(yCred, mCred + 1, 1);
+      const mesPgtoKey = mesAnoStr(dPgto.getMonth(), dPgto.getFullYear());
+
+      // Não criar em meses passados
+      if (mesPgtoKey < mesAtualKey) continue;
+
+      // Verificar se já existe um gasto fixo de fatura deste cartão nesse mês
+      const existente = allLancs.find(l =>
+        l.tipo === 'fixo' && l.faturaCartaoId === cartaoId && l.mesAno === mesPgtoKey
+      );
+
+      const cartao = getCartaoById(cartaoId);
+      const obj = {
+        tipo: 'fixo',
+        faturaCartaoId: cartaoId,   // marcador especial
+        cartaoId: cartaoId,
+        pagamento: String(cartaoId),
+        descricao: `Fatura ${cartao?.nome || 'Cartão'}`,
+        valor: totalFatura,
+        categoriaId: null,
+        pago: existente?.pago || false,
+        mesAno: mesPgtoKey,
+        autoFatura: true,           // não editável manualmente
+        criadoEm: existente?.criadoEm || Date.now(),
+      };
+
+      if (existente) {
+        obj.id = existente.id;
+        await DB.updateLancamento(obj);
+      } else if (totalFatura > 0) {
+        await DB.addLancamento(obj);
+      }
+    }
+  }
+
   async function _deletarTodasParcelas(grupoId){
     const allLancs=await DB.getAllLancamentos();
-    for(const l of allLancs.filter(l=>l.grupoId===grupoId)) await DB.deleteLancamento(l.id);
+    const grupo = allLancs.filter(l=>l.grupoId===grupoId);
+    const cartaoId = grupo[0]?.cartaoId;
+    for(const l of grupo) await DB.deleteLancamento(l.id);
+    if(cartaoId) await atualizarFaturaFixa(cartaoId);
     state.lancamentos=await DB.getLancamentos(mesAnoStr(state.currentMonth,state.currentYear));
     closeModal();toast('Todas as parcelas excluídas','info');goBack();
   }
   async function _deletarUmaParcela(id){
+    const allLancs=await DB.getAllLancamentos();
+    const lanc=allLancs.find(l=>l.id===id);
+    const cartaoId=lanc?.cartaoId;
     await DB.deleteLancamento(id);
+    if(cartaoId) await atualizarFaturaFixa(cartaoId);
     state.lancamentos=await DB.getLancamentos(mesAnoStr(state.currentMonth,state.currentYear));
     closeModal();toast('Parcela excluída','info');goBack();
   }
@@ -1520,6 +1634,9 @@ const App = (() => {
     await DB.open();
     await DB.seedDefaults();
     await loadData();
+    // Recalcular faturas automáticas para todos os cartões
+    for(const c of state.cartoes) await atualizarFaturaFixa(c.id);
+    await loadData(); // recarregar com as faturas atualizadas
     gotoScreen('screen-home',false);
   }
 
