@@ -1604,8 +1604,13 @@ const App = (() => {
       };
 
       if (existente) {
-        obj.id = existente.id;
-        await DB.updateLancamento(obj);
+        if (totalFatura > 0) {
+          obj.id = existente.id;
+          await DB.updateLancamento(obj);
+        } else {
+          // Não há mais créditos neste mês → remover a fatura automática
+          await DB.deleteLancamento(existente.id);
+        }
       } else if (totalFatura > 0) {
         await DB.addLancamento(obj);
       }
