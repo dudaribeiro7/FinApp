@@ -1767,9 +1767,26 @@ const App = (() => {
     }
   }
 
+  async function migrarFaturasParaDebito() {
+    // Roda uma vez: corrige faturas autoFatura que tinham pagamento=cartaoId
+    const jaRodou = localStorage.getItem('migr_fatura_debito');
+    if (jaRodou) return;
+    const allLancs = await DB.getAllLancamentos();
+    const faturas = allLancs.filter(l => l.autoFatura && l.faturaCartaoId && l.pagamento !== 'debito');
+    for (const l of faturas) {
+      l.pagamento = 'debito';
+      l.cartaoId = null;
+      await DB.updateLancamento(l);
+    }
+    if (faturas.length > 0) console.log(`[migração] ${faturas.length} faturas corrigidas para débito`);
+    localStorage.setItem('migr_fatura_debito', '1');
+  }
+
   async function init(){
     await DB.open();
     await DB.seedDefaults();
+    // Migração: corrigir faturas automáticas que estavam com pagamento=cartaoId
+    await migrarFaturasParaDebito();
     // Verificar se voltou do OAuth do Google
     if (Sheets.handleOAuthCallback()) {
       toast('Conectado ao Google com sucesso!', 'ok');
