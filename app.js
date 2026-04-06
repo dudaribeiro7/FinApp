@@ -1768,18 +1768,19 @@ const App = (() => {
   }
 
   async function migrarFaturasParaDebito() {
-    // Roda uma vez: corrige faturas autoFatura que tinham pagamento=cartaoId
-    const jaRodou = localStorage.getItem('migr_fatura_debito');
+    // Roda uma vez por versão: corrige faturas autoFatura para pagamento=debito
+    const jaRodou = localStorage.getItem('migr_fatura_debito_v2');
     if (jaRodou) return;
     const allLancs = await DB.getAllLancamentos();
-    const faturas = allLancs.filter(l => l.autoFatura && l.faturaCartaoId && l.pagamento !== 'debito');
+    // Seleciona faturas automáticas onde pagamento NÃO é a string 'debito'
+    const faturas = allLancs.filter(l => l.autoFatura && l.faturaCartaoId && String(l.pagamento) !== 'debito');
     for (const l of faturas) {
       l.pagamento = 'debito';
       l.cartaoId = null;
       await DB.updateLancamento(l);
     }
-    if (faturas.length > 0) console.log(`[migração] ${faturas.length} faturas corrigidas para débito`);
-    localStorage.setItem('migr_fatura_debito', '1');
+    console.log(`[migração v2] ${faturas.length} faturas corrigidas para débito`);
+    localStorage.setItem('migr_fatura_debito_v2', '1');
   }
 
   async function init(){
