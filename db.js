@@ -2,7 +2,7 @@
    db.js — IndexedDB layer v3
 ═══════════════════════════════════════════ */
 const DB = (() => {
-  const NAME = 'financas_app', VERSION = 3;
+  const NAME = 'financas_app', VERSION = 4;
   let _db = null;
 
   async function open() {
@@ -25,6 +25,10 @@ const DB = (() => {
         if (!db.objectStoreNames.contains('cartoes')) db.createObjectStore('cartoes', { keyPath: 'id', autoIncrement: true });
         if (!db.objectStoreNames.contains('config')) db.createObjectStore('config', { keyPath: 'key' });
         if (!db.objectStoreNames.contains('fixos_template')) db.createObjectStore('fixos_template', { keyPath: 'id', autoIncrement: true });
+        if (!db.objectStoreNames.contains('fixos_deletados')) {
+          const fd = db.createObjectStore('fixos_deletados', { keyPath: 'id', autoIncrement: true });
+          fd.createIndex('templateMes', ['templateId','mesAno'], { unique: true });
+        }
       };
       req.onsuccess = e => { _db = e.target.result; res(_db); };
       req.onerror = e => rej(e.target.error);
@@ -52,6 +56,54 @@ const DB = (() => {
   async function saveFixoTemplate(obj) { await open(); return put('fixos_template', obj); }
   async function deleteFixoTemplate(id) { await open(); return del('fixos_template', id); }
 
+  async function markFixoDeletado(templateId, mesAno) {
+    await open();
+    // Usa put com índice único [templateId, mesAno] — sem duplicatas
+    return new Promise((res, rej) => {
+      const store = _db.transaction('fixos_deletados', 'readwrite').objectStore('fixos_deletados');
+      // Verificar se já existe antes de inserir
+      const idx = store.index('templateMes');
+      const req = idx.getKey([templateId, mesAno]);
+      req.onsuccess = () => {
+        if (req.result !== undefined) { res(); return; } // já existe
+        const r2 = store.add({ templateId, mesAno, criadoEm: Date.now() });
+        r2.onsuccess = () => res();
+        r2.onerror = () => rej(r2.error);
+      };
+      req.onerror = () => rej(req.error);
+    });
+  }
+
+  async function getFixosDeletados(mesAno) {
+    await open();
+    return new Promise((res, rej) => {
+      const store = _db.transaction('fixos_deletados', 'readonly').objectStore('fixos_deletados');
+      const r = store.getAll();
+      r.onsuccess = () => res(r.result.filter(x => x.mesAno === mesAno));
+      r.onerror = () => rej(r.error);
+    });
+  }
+
+  // Limpa registros de fixos_deletados quando o template é deletado definitivamente
+  async function clearFixosDeletadosByTemplate(templateId) {
+    await open();
+    return new Promise((res, rej) => {
+      const store = _db.transaction('fixos_deletados', 'readwrite').objectStore('fixos_deletados');
+      const r = store.getAll();
+      r.onsuccess = () => {
+        const toDelete = r.result.filter(x => x.templateId === templateId);
+        let pending = toDelete.length;
+        if (!pending) { res(); return; }
+        toDelete.forEach(x => {
+          const d = store.delete(x.id);
+          d.onsuccess = () => { if (--pending === 0) res(); };
+          d.onerror = () => rej(d.error);
+        });
+      };
+      r.onerror = () => rej(r.error);
+    });
+  }
+
   // Garante instâncias de gastos fixos E entradas fixas no mês
   // mesAnoMinimo: mês a partir do qual o template foi criado (não criar em meses anteriores)
   async function ensureFixosMes(mesAno, mesAnoAtual) {
@@ -65,12 +117,15 @@ const DB = (() => {
 
     const existentes = await byIndex('lancamentos','mesAno',mesAno);
     const existTemplIds = new Set(existentes.filter(l=>l.templateId).map(l=>l.templateId));
+    const deletados = await getFixosDeletados(mesAno);
+    const deletadosTemplIds = new Set(deletados.map(d => d.templateId));
     const [mesStr, anoStr] = mesAno.split('-');
     const mes = parseInt(mesStr) - 1;
     const ano = parseInt(anoStr);
 
     for (const tmpl of templates) {
       if (existTemplIds.has(tmpl.id)) continue;
+      if (deletadosTemplIds.has(tmpl.id)) continue; // usuário deletou manualmente neste mês
       // Só criar se o template foi criado antes ou no mesmo mês
       // (tmpl.criadoEm é timestamp; comparar com mesAno)
       if (tmpl.mesAnoMinimo && mesAno < tmpl.mesAnoMinimo) continue;
@@ -195,6 +250,7 @@ const DB = (() => {
     getLancamentos, getAllLancamentos, addLancamento, updateLancamento, deleteLancamento,
     getLancamentosByTemplateId,
     getFixosTemplates, saveFixoTemplate, deleteFixoTemplate, ensureFixosMes,
+    markFixoDeletado, getFixosDeletados, clearFixosDeletadosByTemplate,
     getCategorias, saveCategoria, deleteCategoria,
     getCartoes, saveCartao, deleteCartao,
     getConfig, setConfig,

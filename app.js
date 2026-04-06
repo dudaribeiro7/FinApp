@@ -1637,6 +1637,7 @@ const App = (() => {
   }
   async function _deletarFixoTemplate(templateId,id){
     await DB.deleteFixoTemplate(templateId);
+    await DB.clearFixosDeletadosByTemplate(templateId); // limpar registros de deleção manual
     const allLancs=await DB.getAllLancamentos();
     const mesAtual=mesAnoStr(state.currentMonth,state.currentYear);
     for(const l of allLancs.filter(l=>l.templateId===templateId&&l.mesAno>=mesAtual))
@@ -1645,7 +1646,14 @@ const App = (() => {
     closeModal();toast('Removido de todos os meses','info');goBack();
   }
   async function _deletarUmFixo(id){
+    const allLancs=await DB.getAllLancamentos();
+    const lanc=allLancs.find(l=>l.id===id);
     await DB.deleteLancamento(id);
+    // Registrar que este template foi deletado manualmente neste mês
+    // para que ensureFixosMes não recrie o lançamento ao navegar
+    if(lanc?.templateId && lanc?.mesAno){
+      await DB.markFixoDeletado(lanc.templateId, lanc.mesAno);
+    }
     state.lancamentos=await DB.getLancamentos(mesAnoStr(state.currentMonth,state.currentYear));
     closeModal();toast('Excluído deste mês','info');goBack();
   }
