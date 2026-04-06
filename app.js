@@ -1592,8 +1592,8 @@ const App = (() => {
       const obj = {
         tipo: 'fixo',
         faturaCartaoId: cartaoId,   // marcador especial
-        cartaoId: cartaoId,
-        pagamento: String(cartaoId),
+        cartaoId: null,             // pagamento é débito, não no cartão
+        pagamento: 'debito',        // fatura é paga no débito
         descricao: `Fatura ${cartao?.nome || 'Cartão'}`,
         valor: totalFatura,
         categoriaId: null,
