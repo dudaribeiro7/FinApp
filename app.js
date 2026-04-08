@@ -192,8 +192,8 @@ const App = (() => {
     // Só entradas com data <= limiteConfirmacao (efetivamente recebidas)
     const entradas = lancs.filter(l=>l.tipo==='entrada' && l.data && l.data<=limiteConfirmacao)
                           .reduce((s,l)=>s+(l.valor||0),0);
-    // Saídas débito (avulso + fixo débito pago) — sem data, considerar sempre
-    const debitos = lancs.filter(l=>l.tipo==='debito').reduce((s,l)=>s+(l.valor||0),0);
+    // Saídas débito efetivadas (data <= limiteConfirmacao) — débitos sem data não contam
+    const debitos = lancs.filter(l=>l.tipo==='debito' && l.data && l.data<=limiteConfirmacao).reduce((s,l)=>s+(l.valor||0),0);
     const fixosDeb = lancs.filter(l=>l.tipo==='fixo'&&l.pago&&l.pagamento==='debito').reduce((s,l)=>s+(l.valor||0),0);
     return saldoIni + entradas - debitos - fixosDeb;
   }
@@ -212,8 +212,9 @@ const App = (() => {
     const totalPend = entradasPend.reduce((s,l)=>s+(l.valor||0),0);
     const totalSemData = entradasPend.filter(l=>!l.data).length;
 
-    // saídas no débito apenas (item 4)
-    const debitos = lancs.filter(l=>l.tipo==='debito').reduce((s,l)=>s+(l.valor||0),0);
+    // saídas no débito apenas (item 4) — apenas efetivados (data <= hoje)
+    const debitos = lancs.filter(l=>l.tipo==='debito' && isDateConfirmed(l.data)).reduce((s,l)=>s+(l.valor||0),0);
+    const debitosPend = lancs.filter(l=>l.tipo==='debito' && !isDateConfirmed(l.data)).reduce((s,l)=>s+(l.valor||0),0);
     const fixosDebPagos = lancs.filter(l=>l.tipo==='fixo'&&l.pago&&l.pagamento==='debito').reduce((s,l)=>s+(l.valor||0),0);
     const totalSaidasDebito = debitos + fixosDebPagos;
 
@@ -249,8 +250,11 @@ const App = (() => {
 
     // Saídas = só débito (item 4)
     document.getElementById('h-saidas').textContent = fmtMoney(totalSaidasDebito);
-    const nSaidasDeb = lancs.filter(l=>l.tipo==='debito'||(l.tipo==='fixo'&&l.pagamento==='debito')).length;
+    const nSaidasDeb = lancs.filter(l=>(l.tipo==='debito'&&isDateConfirmed(l.data))||(l.tipo==='fixo'&&l.pago&&l.pagamento==='debito')).length;
     document.getElementById('h-saidas-sub').textContent = `${nSaidasDeb} lançamento${nSaidasDeb!==1?'s':''}`;
+    const pendDebEl = document.getElementById('h-saidas-pending');
+    if (debitosPend>0 && pendDebEl) { pendDebEl.style.display=''; pendDebEl.textContent=`+${fmtMoney(debitosPend)} pendente`; }
+    else if (pendDebEl) pendDebEl.style.display='none';
 
     // Progresso
     const pctEl = document.getElementById('h-prog-pct');
@@ -349,20 +353,61 @@ const App = (() => {
     const cat = getCatById(l.categoriaId);
     const isEntrada = l.tipo==='entrada';
     const isFixo = l.tipo==='fixo';
+    const isDebito = l.tipo==='debito';
     const isCredito = l.tipo==='credito';
     const cartao = (isCredito||isFixo) ? getCartaoById(l.cartaoId) : null;
-    const emoji = getCatEmoji(l);
-    const cor = isEntrada ? 'var(--green)' : isFixo ? '#888899' : getCatCor(l);
-    const bgCor = isEntrada ? 'var(--green-dim)' : isFixo ? '#88889922' : cor+'28';
-    const sinal = isEntrada ? '+' : '-';
-    const valor = isCredito ? (l.valorParcela||0) : (l.valor||0);
 
-    // data confirmada?
+    // ── Cor do valor por tipo (não mais por categoria) ──
+    // Entrada: verde se efetivada, cinza se pendente/sem data
+    // Débito: vermelho se efetivado (data <= hoje), cinza se pendente
+    // Fixo: cinza se não pago, após pago segue tipo (débito→vermelho, crédito→cor do cartão)
+    // Crédito: cor do cartão
     const semData = isEntrada && !l.data;
     const pendente = isEntrada && l.data && !isDateConfirmed(l.data);
+    const debitoConfirmado = isDebito && l.data && isDateConfirmed(l.data);
+    const debitoPendente = isDebito && (!l.data || !isDateConfirmed(l.data));
+
+    let corValor;
+    if (isEntrada) {
+      corValor = (semData || pendente) ? 'var(--text3)' : 'var(--green)';
+    } else if (isDebito) {
+      corValor = debitoPendente ? 'var(--text3)' : 'var(--red)';
+    } else if (isFixo) {
+      if (!l.pago) {
+        corValor = 'var(--text3)';
+      } else if (l.pagamento === 'debito') {
+        corValor = 'var(--red)';
+      } else if (cartao) {
+        corValor = cartao.cor;
+      } else {
+        corValor = 'var(--red)';
+      }
+    } else if (isCredito) {
+      corValor = cartao ? cartao.cor : 'var(--red)';
+    } else {
+      corValor = 'var(--text3)';
+    }
+
+    // bgCor do ícone — mantém baseado em tipo geral
+    const bgCor = isEntrada ? 'var(--green-dim)' : isFixo ? '#88889922' :
+                  isCredito && cartao ? cartao.cor+'28' : 'var(--red-dim)';
+    const sinal = isEntrada ? '+' : '-';
+    const valor = isCredito ? (l.valorParcela||0) : (l.valor||0);
     const dataTxt = l.data ? new Date(l.data+'T12:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}) : '';
 
-    // Detalhe: categoria ou "emoji_subcat Nome_cat › Nome_subcat"
+    // ── Nome em destaque: descrição > subcategoria > categoria ──
+    let nome;
+    if (l.descricao) {
+      nome = l.descricao;
+    } else if (l.subcat) {
+      nome = l.subcat;
+    } else if (cat) {
+      nome = cat.nome;
+    } else {
+      nome = l.tipo;
+    }
+
+    // ── Detalhe: categoria ou "cat › subcat" ──
     let detalhe = '';
     if (l.subcat && cat) {
       const subObj = cat.subcats ? cat.subcats.find(s=>(typeof s==='string'?s:s.nome)===l.subcat) : null;
@@ -371,29 +416,31 @@ const App = (() => {
     } else if (cat) {
       detalhe = cat.nome;
     }
-    // tipo de pagamento
     if (isFixo) {
       detalhe += ` · ${l.pagamento==='debito'?'Gasto fixo · Débito': `Gasto fixo · ${cartao?.nome||'Crédito'}`}`;
+      if (l.dataPagamento) {
+        const dpTxt = new Date(l.dataPagamento+'T12:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'});
+        detalhe += ` · pago em ${dpTxt}`;
+      }
     } else if (isCredito && cartao) {
       detalhe += ` · ${cartao.nome}`;
       if (l.parcela && l.totalParcelas) detalhe += ` · ${l.parcela}/${l.totalParcelas}`;
-    } else if (!isEntrada) {
+    } else if (isDebito) {
       detalhe += ' · Débito';
     } else if (l.fixo) {
       detalhe += ' · Entrada fixa';
     }
     if (dataTxt) detalhe += ` · ${dataTxt}`;
 
+    // Badge de status
     const badge = semData ? '<span class="badge badge-nodate">sem data</span>' :
-                  pendente ? '<span class="badge badge-pending">pendente</span>' : '';
+                  pendente ? '<span class="badge badge-pending">pendente</span>' :
+                  (isDebito && debitoPendente && l.data) ? '<span class="badge badge-pending">pendente</span>' : '';
 
     const pagoToggle = (isFixo && showPagoToggle) ? `
       <div class="fixo-pago-toggle ${l.pago?'pago':''}" onclick="event.stopPropagation();App.toggleFixoPago(${l.id})" title="${l.pago?'Não pago':'Marcar como pago'}">
         ${l.pago?'<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>':'<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/></svg>'}
       </div>` : '';
-
-    // Nome: descrição ou nome da categoria
-    const nome = l.descricao || cat?.nome || l.tipo;
 
     // Ícone: sempre emoji da CATEGORIA (não subcategoria)
     const catEmoji = cat ? cat.emoji : (isEntrada ? '💰' : '💸');
@@ -407,7 +454,7 @@ const App = (() => {
         <div class="feed-cat">${detalhe}</div>
       </div>
       <div class="feed-right">
-        <div class="feed-val" style="color:${semData||pendente?'var(--text3)':cor}">${sinal}${fmtMoney(valor)}</div>
+        <div class="feed-val" style="color:${corValor}">${sinal}${fmtMoney(valor)}</div>
         ${badge}
       </div>
     </div>`;
@@ -417,6 +464,12 @@ const App = (() => {
     const l = state.lancamentos.find(x=>x.id===id);
     if (!l) return;
     l.pago = !l.pago;
+    // Ao marcar como pago: registrar data de pagamento como hoje
+    if (l.pago) {
+      l.dataPagamento = todayStr();
+    } else {
+      l.dataPagamento = null;
+    }
     await DB.updateLancamento(l);
     state.lancamentos = await DB.getLancamentos(mesAnoStr(state.currentMonth, state.currentYear));
     if (state.currentScreen==='screen-lancamentos') renderLancamentos();
@@ -438,8 +491,19 @@ const App = (() => {
   function renderLancamentos() {
     document.getElementById('lanc-month-label').textContent=`${MONTHS[state.currentMonth]} ${state.currentYear}`;
     let lancs = [...state.lancamentos].sort((a,b)=>{
-      const da=a.data||'9999-12-31',db2=b.data||'9999-12-31';
-      return db2.localeCompare(da)||(b.criadoEm||0)-(a.criadoEm||0);
+      const aTemData = !!a.data;
+      const bTemData = !!b.data;
+      if (!aTemData && bTemData) return -1;
+      if (aTemData && !bTemData) return 1;
+      if (!aTemData && !bTemData) {
+        const aCat = getCatById(a.categoriaId);
+        const bCat = getCatById(b.categoriaId);
+        const aLabel = (a.subcat || aCat?.nome || '').toLowerCase();
+        const bLabel = (b.subcat || bCat?.nome || '').toLowerCase();
+        return aLabel.localeCompare(bLabel, 'pt-BR');
+      }
+      if (b.data !== a.data) return b.data.localeCompare(a.data);
+      return (b.criadoEm||0)-(a.criadoEm||0);
     });
 
     if (state.lancTab==='entradas') lancs=lancs.filter(l=>l.tipo==='entrada');
@@ -610,6 +674,8 @@ const App = (() => {
     }
     else if (tipo==='fixo') {
       const tipoSel=edit?.pagamento||'debito';
+      const temDiaFixo = edit?.diaDoMes ? true : false;
+      // Se tem diaDoMes, usa lógica automática (sem toggle pago manual)
       el.innerHTML=`${campoValor}
         <div class="field"><div class="field-label">Tipo de pagamento</div>
           <div class="cat-grid" id="payment-grid">
@@ -620,10 +686,21 @@ const App = (() => {
               <div class="cat-name">${c.nome}</div></div>`;}).join('')}
           </div></div>
         ${campoCat}
-        <div class="field"><div class="field-label">Pago este mês?</div>
-          <div class="toggle-field"><span class="toggle-label">Marcar como pago</span>
-            <div class="toggle ${edit?.pago?'on':''}" id="toggle-pago" onclick="this.classList.toggle('on');this.querySelector('.toggle-thumb').style.left=this.classList.contains('on')?'20px':'2px'">
-              <div class="toggle-thumb" style="left:${edit?.pago?'20px':'2px'}"></div></div></div></div>
+        <div class="row2">
+          <div class="field"><div class="field-label">Dia do mês <span class="opt-badge">opcional</span></div>
+            <input type="number" id="f-dia-fixo" min="1" max="28" placeholder="Ex: 5" value="${edit?.diaDoMes||''}" oninput="App._onFixoDiaChange()">
+            <div style="font-size:11px;color:var(--text3);margin-top:5px">Se preenchido, pagamento automático neste dia</div>
+          </div>
+          <div class="field" id="campo-data-pagto"><div class="field-label">Data de pagamento <span class="opt-badge">opcional</span></div>
+            <input type="date" id="f-data-pagto" value="${edit?.dataPagamento||''}">
+          </div>
+        </div>
+        <div id="fixo-pago-section" style="${edit?.diaDoMes?'display:none':''}">
+          <div class="field"><div class="field-label">Pago este mês?</div>
+            <div class="toggle-field"><span class="toggle-label">Marcar como pago</span>
+              <div class="toggle ${edit?.pago?'on':''}" id="toggle-pago" onclick="this.classList.toggle('on');this.querySelector('.toggle-thumb').style.left=this.classList.contains('on')?'20px':'2px'">
+                <div class="toggle-thumb" style="left:${edit?.pago?'20px':'2px'}"></div></div></div></div>
+        </div>
         ${campoDesc}
         ${!state.editingId?`<div style="padding:10px 0 2px;font-size:12px;color:var(--text3)">ℹ️ Este gasto fixo será replicado automaticamente em todos os meses seguintes</div>`:''}
         <button class="submit-btn btn-fixo" onclick="App._salvar()">${state.editingId?'Salvar alterações':'Salvar gasto fixo'}</button>
@@ -774,11 +851,23 @@ const App = (() => {
       const paySel=document.querySelector('#payment-grid .cat-chip.sel');
       obj.pagamento=paySel?paySel.dataset.pay:'debito';
       obj.cartaoId=obj.pagamento==='debito'?null:parseInt(obj.pagamento);
-      obj.pago=document.getElementById('toggle-pago')?.classList.contains('on')||false;
+      const diaFixo=parseInt(document.getElementById('f-dia-fixo')?.value||'0')||null;
+      const dataPagtoInput=document.getElementById('f-data-pagto')?.value||'';
+      obj.diaDoMes=diaFixo||null;
+      if(diaFixo){
+        // Pagamento automático: data determinada pelo dia do mês
+        obj.data=`${state.currentYear}-${String(state.currentMonth+1).padStart(2,'0')}-${String(diaFixo).padStart(2,'0')}`;
+        // pago = automaticamente se data <= hoje
+        obj.pago=isDateConfirmed(obj.data);
+        obj.dataPagamento=obj.pago?(dataPagtoInput||obj.data):null;
+      } else {
+        obj.pago=document.getElementById('toggle-pago')?.classList.contains('on')||false;
+        obj.dataPagamento=dataPagtoInput||null;
+      }
       if(!state.editingId){
         // mesAnoMinimo = mês atual (não replicar em meses passados)
         const mesAnoMinimo=mesAnoStr(state.currentMonth,state.currentYear);
-        const tmpl={tipo:'fixo',categoriaId:catId,subcat,descricao:desc,valor,pagamento:obj.pagamento,cartaoId:obj.cartaoId,mesAnoMinimo};
+        const tmpl={tipo:'fixo',categoriaId:catId,subcat,descricao:desc,valor,pagamento:obj.pagamento,cartaoId:obj.cartaoId,diaDoMes:diaFixo||null,mesAnoMinimo};
         const tmplId=await DB.saveFixoTemplate(tmpl);
         obj.templateId=tmplId;
       }
@@ -838,6 +927,15 @@ const App = (() => {
       obj.id=state.editingId;
       const orig=state.lancamentos.find(l=>l.id===state.editingId);
       if(orig){obj.criadoEm=orig.criadoEm;obj.grupoId=orig.grupoId;obj.templateId=orig.templateId;}
+      // Fixo e entrada_fixa com templateId: perguntar escopo da edição (exceto ao marcar pago)
+      const isFixoOuEntradaFixa = (tipo==='fixo'||tipo==='entrada_fixa') && orig?.templateId;
+      if(isFixoOuEntradaFixa){
+        // Guardar obj pendente e abrir modal de escopo
+        state._editPendingObj = obj;
+        state._editPendingMesAno = mesAno;
+        openModal('confirm-edit-fixo', orig);
+        return;
+      }
       await DB.updateLancamento(obj);
       toast('Lançamento atualizado!','ok');
     } else {
@@ -845,6 +943,88 @@ const App = (() => {
       toast('Lançamento salvo!','ok');
     }
     state.lancamentos=await DB.getLancamentos(mesAno);
+    goBack();
+  }
+
+  // Toggle visibilidade do campo "pago" quando diaDoMes é preenchido
+  function _onFixoDiaChange() {
+    const diaEl = document.getElementById('f-dia-fixo');
+    const pagoSection = document.getElementById('fixo-pago-section');
+    if (!pagoSection) return;
+    const temDia = diaEl && parseInt(diaEl.value) > 0;
+    pagoSection.style.display = temDia ? 'none' : '';
+  }
+
+  // Confirmar edição apenas deste lançamento
+  async function _editarSoEste() {
+    const obj = state._editPendingObj;
+    const mesAno = state._editPendingMesAno;
+    if (!obj) { closeModal(); return; }
+    await DB.updateLancamento(obj);
+    state._editPendingObj = null;
+    state.lancamentos = await DB.getLancamentos(mesAno);
+    // Atualizar também o template se diaDoMes mudou (só para este não se propaga, mas valor/categoria pode mudar)
+    closeModal();
+    toast('Lançamento atualizado!','ok');
+    goBack();
+  }
+
+  // Confirmar edição deste e todos os próximos
+  async function _editarTodosSeguintes() {
+    const obj = state._editPendingObj;
+    const mesAno = state._editPendingMesAno;
+    if (!obj) { closeModal(); return; }
+    // 1. Atualizar lançamento atual
+    await DB.updateLancamento(obj);
+    // 2. Atualizar template para refletir nas cópias futuras
+    if (obj.templateId) {
+      const templates = await DB.getFixosTemplates();
+      const tmpl = templates.find(t => t.id === obj.templateId);
+      if (tmpl) {
+        const novoTmpl = {...tmpl,
+          categoriaId: obj.categoriaId,
+          subcat: obj.subcat,
+          descricao: obj.descricao,
+          valor: obj.valor,
+        };
+        // Para fixo: salvar pagamento, cartaoId e diaDoMes também
+        if (obj.tipo === 'fixo') {
+          novoTmpl.pagamento = obj.pagamento;
+          novoTmpl.cartaoId = obj.cartaoId;
+          novoTmpl.diaDoMes = obj.diaDoMes || null;
+        }
+        await DB.saveFixoTemplate(novoTmpl);
+        // 3. Atualizar todos os lançamentos futuros deste template
+        const allLancs = await DB.getAllLancamentos();
+        const mesAtual = mesAno;
+        for (const l of allLancs.filter(l => l.templateId === obj.templateId && l.mesAno > mesAtual)) {
+          const updated = {...l,
+            categoriaId: obj.categoriaId,
+            subcat: obj.subcat,
+            descricao: obj.descricao,
+            valor: obj.valor,
+          };
+          if (obj.tipo === 'fixo') {
+            updated.pagamento = obj.pagamento;
+            updated.cartaoId = obj.cartaoId;
+            if (obj.diaDoMes) {
+              updated.diaDoMes = obj.diaDoMes;
+              // Recalcular data para cada mês futuro
+              const [mStr, yStr] = l.mesAno.split('-');
+              updated.data = `${yStr}-${mStr}-${String(obj.diaDoMes).padStart(2,'0')}`;
+              updated.pago = isDateConfirmed(updated.data);
+            } else {
+              updated.diaDoMes = null;
+            }
+          }
+          await DB.updateLancamento(updated);
+        }
+      }
+    }
+    state._editPendingObj = null;
+    state.lancamentos = await DB.getLancamentos(mesAno);
+    closeModal();
+    toast('Lançamento atualizado em todos os meses seguintes!','ok');
     goBack();
   }
 
@@ -910,7 +1090,7 @@ const App = (() => {
 
     const entConf=lancs.filter(l=>l.tipo==='entrada'&&isDateConfirmed(l.data)).reduce((s,l)=>s+(l.valor||0),0);
     const entPend=lancs.filter(l=>l.tipo==='entrada'&&!isDateConfirmed(l.data)).reduce((s,l)=>s+(l.valor||0),0);
-    const debito=lancs.filter(l=>l.tipo==='debito').reduce((s,l)=>s+(l.valor||0),0);
+    const debito=lancs.filter(l=>l.tipo==='debito'&&isDateConfirmed(l.data)).reduce((s,l)=>s+(l.valor||0),0);
     const fixosDebPagos=lancs.filter(l=>l.tipo==='fixo'&&l.pago&&l.pagamento==='debito').reduce((s,l)=>s+(l.valor||0),0);
     const fixosNPagos=lancs.filter(l=>l.tipo==='fixo'&&!l.pago).reduce((s,l)=>s+(l.valor||0),0);
 
@@ -1480,6 +1660,16 @@ const App = (() => {
           <button class="btn-cancel" onclick="App.closeModal()">Cancelar</button>
         </div>`;
     }
+    else if(type==='confirm-edit-fixo'){
+      const isEntradaFixa=data.fixo||false;
+      content.innerHTML=`<div class="modal-title">Editar ${isEntradaFixa?'entrada fixa':'gasto fixo'} recorrente</div>
+        <p style="font-size:14px;color:var(--text2);line-height:1.6;margin-bottom:20px">Este lançamento se repete mensalmente. Aplicar alteração apenas a este mês ou a todos os meses seguintes?</p>
+        <div class="modal-btns" style="flex-direction:column">
+          <button class="btn-save" style="margin-bottom:8px" onclick="App._editarTodosSeguintes()">Este e todos os próximos meses</button>
+          <button class="btn-cancel" style="margin-bottom:8px" onclick="App._editarSoEste()">Só este mês</button>
+          <button class="btn-cancel" onclick="App.closeModal()">Cancelar</button>
+        </div>`;
+    }
     document.getElementById('modal-overlay').classList.add('open');
   }
 
@@ -1825,6 +2015,7 @@ const App = (() => {
     abrirCartao,abrirFiltroCategoria,_toggleFiltroItem,limparFiltroCategoria,
     setTipoLanc,_maskMoney,_selCat,_selSubcat,_selPay,_selCartao,_updateParcelas,
     _salvar,_deletar,_deletarTodasParcelas,_deletarUmaParcela,_deletarFixoTemplate,_deletarUmFixo,
+    _editarSoEste,_editarTodosSeguintes,_onFixoDiaChange,
     setRelTab,_setRelPeriodo,
     setCfgTab,_toggleCatRow,
     _openAddCat,_openEditCat,_deleteCategoria,_openAddSubcat,_openEditSubcat,_deleteSubcat,

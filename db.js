@@ -146,7 +146,7 @@ const DB = (() => {
           criadoEm: Date.now(),
         });
       } else {
-        await put('lancamentos', {
+        let fixoObj = {
           tipo: 'fixo',
           templateId: tmpl.id,
           categoriaId: tmpl.categoriaId,
@@ -155,10 +155,23 @@ const DB = (() => {
           valor: tmpl.valor,
           pagamento: tmpl.pagamento,
           cartaoId: tmpl.cartaoId,
-          pago: false,
+          diaDoMes: tmpl.diaDoMes || null,
           mesAno,
           criadoEm: Date.now(),
-        });
+        };
+        if (tmpl.diaDoMes) {
+          const dia = tmpl.diaDoMes;
+          const dataStr = `${ano}-${String(mes+1).padStart(2,'0')}-${String(dia).padStart(2,'0')}`;
+          fixoObj.data = dataStr;
+          // pago automático se a data já passou
+          const hoje = new Date().toISOString().slice(0,10);
+          fixoObj.pago = dataStr <= hoje;
+          fixoObj.dataPagamento = fixoObj.pago ? dataStr : null;
+        } else {
+          fixoObj.pago = false;
+          fixoObj.dataPagamento = null;
+        }
+        await put('lancamentos', fixoObj);
       }
     }
   }
