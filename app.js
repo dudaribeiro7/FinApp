@@ -256,19 +256,21 @@ const App = (() => {
     if (debitosPend>0 && pendDebEl) { pendDebEl.style.display=''; pendDebEl.textContent=`+${fmtMoney(debitosPend)} pendente`; }
     else if (pendDebEl) pendDebEl.style.display='none';
 
-    // Progresso
+    // Progresso (inclui pendentes)
     const pctEl = document.getElementById('h-prog-pct');
     const fillEl = document.getElementById('h-prog-fill');
     const hintEl = document.getElementById('h-prog-hint');
-    if (totalEntradas>0) {
-      const pct = Math.min((totalSaidasDebito/totalEntradas)*100,100);
+    const totalEntradasTotal = totalEntradas + totalPend;
+    const totalSaidasTotal = totalSaidasDebito + debitosPend;
+    if (totalEntradasTotal>0) {
+      const pct = Math.min((totalSaidasTotal/totalEntradasTotal)*100,100);
       pctEl.textContent = pct.toFixed(0)+'%';
       pctEl.style.color = pct>90?'var(--red)':pct>70?'var(--amber)':'var(--green)';
       fillEl.style.width = pct+'%';
       hintEl.textContent = '';
     } else {
       pctEl.textContent='—'; fillEl.style.width='0%';
-      hintEl.textContent = totalPend>0?'Aguardando entradas confirmadas':'Nenhuma entrada confirmada';
+      hintEl.textContent = 'Nenhuma entrada registrada';
     }
 
     // Alert
