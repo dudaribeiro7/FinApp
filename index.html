@@ -46,6 +46,33 @@
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
 }
+body.light-mode{
+  --bg:#f0f2f5;
+  --bg2:#ffffff;
+  --bg3:#e8eaee;
+  --bg4:#dde0e7;
+  --border:#00000010;
+  --border2:#00000018;
+  --border3:#00000030;
+  --text:#111118;
+  --text2:#555566;
+  --text3:#9999aa;
+  --green:#16a34a;
+  --green-dim:#16a34a18;
+  --red:#dc2626;
+  --red-dim:#dc262618;
+  --blue:#2563eb;
+  --blue-dim:#2563eb18;
+  --amber:#d97706;
+  --amber-dim:#d9770618;
+  --orange:#ea580c;
+  --orange-dim:#ea580c18;
+  --purple:#7c3aed;
+  --purple-dim:#7c3aed18;
+  --accent:#6d5ef5;
+  --accent2:#7c6af7;
+  --accent-dim:#6d5ef518;
+}
 html,body{height:100%;overflow:hidden;background:var(--bg)}
 body{
   font-family:'DM Sans',sans-serif;
@@ -800,6 +827,7 @@ select option{background:var(--bg3)}
     <button class="seg-btn active" onclick="App.setCfgTab('categorias')" id="ct-categorias">Categorias</button>
     <button class="seg-btn" onclick="App.setCfgTab('cartoes')" id="ct-cartoes">Cartões</button>
     <button class="seg-btn" onclick="App.setCfgTab('notif')" id="ct-notif">Notificações</button>
+    <button class="seg-btn" onclick="App.setCfgTab('aparencia')" id="ct-aparencia">Aparência</button>
     <button class="seg-btn" onclick="App.setCfgTab('dados')" id="ct-dados">Dados</button>
   </div>
 

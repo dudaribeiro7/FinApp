@@ -1366,7 +1366,7 @@ const App = (() => {
   ══════════════════════════════════════ */
   function setCfgTab(tab){
     state.cfgTab=tab;
-    ['categorias','cartoes','notif','dados'].forEach(t=>document.getElementById('ct-'+t)?.classList.toggle('active',t===tab));
+    ['categorias','cartoes','notif','aparencia','dados'].forEach(t=>document.getElementById('ct-'+t)?.classList.toggle('active',t===tab));
     renderPerfil();
   }
 
@@ -1376,6 +1376,7 @@ const App = (() => {
     if(state.cfgTab==='categorias') await renderCfgCategorias(el);
     else if(state.cfgTab==='cartoes') await renderCfgCartoes(el);
     else if(state.cfgTab==='notif') await renderCfgNotif(el);
+    else if(state.cfgTab==='aparencia') await renderCfgAparencia(el);
     else await renderCfgDados(el);
   }
 
@@ -1551,6 +1552,36 @@ const App = (() => {
   async function _toggleNotif(key,el){
     el.classList.toggle('on');el.querySelector('.toggle-thumb').style.left=el.classList.contains('on')?'20px':'2px';
     await DB.setConfig('notif_'+key,el.classList.contains('on'));
+  }
+
+  async function renderCfgAparencia(el){
+    const tema=await DB.getConfig('tema','dark');
+    const isLight=tema==='light';
+    el.innerHTML=`
+      <div class="card" style="padding:20px;margin-bottom:14px">
+        <div class="section-label" style="padding:0;margin-bottom:16px">Tema</div>
+        <div style="display:flex;gap:12px">
+          <div class="tema-option ${!isLight?'ativo':''}" onclick="App._setTema('dark')" id="tema-dark" style="flex:1;border-radius:14px;padding:16px;border:2px solid ${!isLight?'var(--accent)':'var(--border2)'};cursor:pointer;background:${!isLight?'var(--accent-dim)':'var(--bg3)'};transition:all 0.2s;display:flex;flex-direction:column;align-items:center;gap:10px">
+            <div style="width:48px;height:48px;border-radius:12px;background:#0f0f12;display:flex;align-items:center;justify-content:center;font-size:22px">🌙</div>
+            <span style="font-size:13px;font-weight:500;color:${!isLight?'var(--accent2)':'var(--text2)'}">Escuro</span>
+          </div>
+          <div class="tema-option ${isLight?'ativo':''}" onclick="App._setTema('light')" id="tema-light" style="flex:1;border-radius:14px;padding:16px;border:2px solid ${isLight?'var(--accent)':'var(--border2)'};cursor:pointer;background:${isLight?'var(--accent-dim)':'var(--bg3)'};transition:all 0.2s;display:flex;flex-direction:column;align-items:center;gap:10px">
+            <div style="width:48px;height:48px;border-radius:12px;background:#f0f2f5;display:flex;align-items:center;justify-content:center;font-size:22px">☀️</div>
+            <span style="font-size:13px;font-weight:500;color:${isLight?'var(--accent2)':'var(--text2)'}">Claro</span>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  async function _setTema(tema){
+    await DB.setConfig('tema',tema);
+    _aplicarTema(tema);
+    const el=document.getElementById('cfg-content');
+    await renderCfgAparencia(el);
+  }
+
+  function _aplicarTema(tema){
+    document.body.classList.toggle('light-mode',tema==='light');
   }
 
   async function renderCfgDados(el){
@@ -1991,6 +2022,9 @@ const App = (() => {
   async function init(){
     await DB.open();
     await DB.seedDefaults();
+    // Aplicar tema salvo antes de qualquer render
+    const temaSalvo = await DB.getConfig('tema','dark');
+    _aplicarTema(temaSalvo);
     // Migração: corrigir faturas automáticas que estavam com pagamento=cartaoId
     await migrarFaturasParaDebito();
     // Verificar se voltou do OAuth do Google
@@ -2022,7 +2056,7 @@ const App = (() => {
     setCfgTab,_toggleCatRow,
     _openAddCat,_openEditCat,_deleteCategoria,_openAddSubcat,_openEditSubcat,_deleteSubcat,
     _openAddCartao,_editCartao,_deleteCartao,_updateCartao,
-    _toggleNotif,_togglePanel,_exportar,_importar,_limpar,
+    _toggleNotif,_togglePanel,_exportar,_importar,_limpar,_setTema,
     openModal,closeModal,_selColor,_onCustomColor,
     _saveCategoria,_saveSubcat,_saveCartao,
     init,
