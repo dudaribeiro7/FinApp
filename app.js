@@ -1270,19 +1270,6 @@ const App = (() => {
       );
       faturas.forEach(l => totalNaoPago += (l.valor || 0));
 
-      // Se ainda não há faturas automáticas criadas (app antigo), fallback para créditos
-      if (faturas.length === 0) {
-        const creditos = allLancs.filter(l => l.tipo === 'credito' && l.cartaoId === c.id);
-        for (const l of creditos) {
-          const [mesStr, anoStr] = l.mesAno.split('-');
-          const m = parseInt(mesStr) - 1;
-          const y = parseInt(anoStr);
-          const dVenc = new Date(y, m + 1, c.vencimento);
-          const vencStr = `${dVenc.getFullYear()}-${String(dVenc.getMonth()+1).padStart(2,'0')}-${String(c.vencimento).padStart(2,'0')}`;
-          if (vencStr >= hoje) totalNaoPago += (l.valorParcela || 0);
-        }
-      }
-
       const pct = c.limite ? Math.min((totalNaoPago / c.limite) * 100, 100) : 0;
       const disp = Math.max((c.limite || 0) - totalNaoPago, 0);
       const iconHtml = getBancoIconHtml(c.nome, 28);

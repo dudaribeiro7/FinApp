@@ -421,13 +421,14 @@ select option{background:var(--bg3)}
 .seg-ctrl{
   display:flex;margin:0 20px 16px;
   background:var(--bg3);border-radius:var(--rs);padding:4px;gap:4px;
-  flex-shrink:0;
+  flex-shrink:0;overflow-x:auto;scrollbar-width:none;
 }
+.seg-ctrl::-webkit-scrollbar{display:none}
 .seg-btn{
-  flex:1;padding:8px;border-radius:var(--rxs);
+  flex:0 0 auto;padding:8px 12px;border-radius:var(--rxs);
   font-size:13px;font-weight:500;cursor:pointer;text-align:center;
   color:var(--text2);transition:all 0.15s;
-  font-family:'DM Sans',sans-serif;border:none;background:transparent;
+  font-family:'DM Sans',sans-serif;border:none;background:transparent;white-space:nowrap;
 }
 .seg-btn.active{background:var(--bg);color:var(--text);border:0.5px solid var(--border2)}
 
