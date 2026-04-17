@@ -551,7 +551,63 @@ const App = (() => {
       ${state.lancCatFilter.length>0?`<button class="sub-tab" onclick="App.limparFiltroCategoria()" style="color:var(--red);border-color:var(--red)">✕ Limpar</button>`:''}
     </div>`;
 
-    let html = subTabsHtml + filterHtml;
+    // ── Barra de totais dinâmicos ──────────────────
+    const totalEntradas = lancs.filter(l=>l.tipo==='entrada'||l.tipo==='entrada_fixa').reduce((s,l)=>s+(isDateConfirmed(l.data)?l.valor:0),0);
+    const totalSaidas = lancs.filter(l=>['debito','credito','fixo'].includes(l.tipo)).reduce((s,l)=>{
+      if (l.tipo==='fixo') return s+(l.pago?l.valor:0);
+      return s+(isDateConfirmed(l.data)?l.valor:0);
+    },0);
+    const saldo = totalEntradas - totalSaidas;
+
+    let totaisHtml = '';
+    if (lancs.length > 0) {
+      if (state.lancTab==='entradas') {
+        totaisHtml = `<div style="margin:0 20px 12px;padding:12px 16px;background:var(--bg3);border-radius:14px;display:flex;align-items:center;justify-content:space-between">
+          <span style="font-size:12px;color:var(--text3)">${lancs.length} lançamento${lancs.length!==1?'s':''}</span>
+          <span style="font-size:15px;font-weight:700;color:var(--green)">${fmtMoney(totalEntradas)}</span>
+        </div>`;
+      } else if (state.lancTab==='saidas') {
+        totaisHtml = `<div style="margin:0 20px 12px;padding:12px 16px;background:var(--bg3);border-radius:14px;display:flex;align-items:center;justify-content:space-between">
+          <span style="font-size:12px;color:var(--text3)">${lancs.length} lançamento${lancs.length!==1?'s':''}</span>
+          <span style="font-size:15px;font-weight:700;color:var(--red)">-${fmtMoney(totalSaidas)}</span>
+        </div>`;
+      } else if (state.lancTab==='fixos') {
+        const totalFixosPagos = lancs.filter(l=>l.pago).reduce((s,l)=>s+l.valor,0);
+        const totalFixosPendentes = lancs.filter(l=>!l.pago).reduce((s,l)=>s+l.valor,0);
+        totaisHtml = `<div style="margin:0 20px 12px;padding:12px 16px;background:var(--bg3);border-radius:14px">
+          <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+            <span style="font-size:12px;color:var(--text3)">${lancs.length} fixo${lancs.length!==1?'s':''}</span>
+            <span style="font-size:11px;color:var(--text3)">${lancs.filter(l=>l.pago).length} pago${lancs.filter(l=>l.pago).length!==1?'s':''} · ${lancs.filter(l=>!l.pago).length} pendente${lancs.filter(l=>!l.pago).length!==1?'s':''}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between">
+            <span style="font-size:12px;color:var(--text3)">Pago: <span style="color:var(--red);font-weight:600">-${fmtMoney(totalFixosPagos)}</span></span>
+            <span style="font-size:12px;color:var(--text3)">Pendente: <span style="color:var(--text2);font-weight:600">-${fmtMoney(totalFixosPendentes)}</span></span>
+          </div>
+        </div>`;
+      } else {
+        // Todos
+        const saldoCor = saldo >= 0 ? 'var(--green)' : 'var(--red)';
+        const saldoSinal = saldo >= 0 ? '+' : '-';
+        totaisHtml = `<div style="margin:0 20px 12px;padding:12px 16px;background:var(--bg3);border-radius:14px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <span style="font-size:11px;color:var(--text3)">${lancs.length} lançamento${lancs.length!==1?'s':''}</span>
+            <span style="font-size:13px;font-weight:700;color:${saldoCor}">${saldoSinal}${fmtMoney(Math.abs(saldo))}</span>
+          </div>
+          <div style="display:flex;gap:8px">
+            <div style="flex:1;background:var(--bg2);border-radius:10px;padding:8px 10px">
+              <div style="font-size:10px;color:var(--text3);margin-bottom:2px">Entradas</div>
+              <div style="font-size:13px;font-weight:600;color:var(--green)">${fmtMoney(totalEntradas)}</div>
+            </div>
+            <div style="flex:1;background:var(--bg2);border-radius:10px;padding:8px 10px">
+              <div style="font-size:10px;color:var(--text3);margin-bottom:2px">Saídas</div>
+              <div style="font-size:13px;font-weight:600;color:var(--red)">-${fmtMoney(totalSaidas)}</div>
+            </div>
+          </div>
+        </div>`;
+      }
+    }
+
+    let html = subTabsHtml + filterHtml + totaisHtml;
     if (!lancs.length) {
       html+=`<div class="empty-state"><div class="empty-icon">📭</div><div class="empty-title">Nenhum lançamento</div><div class="empty-sub">Toque no + para adicionar</div></div>`;
     } else {
