@@ -609,17 +609,21 @@ const App = (() => {
       }
     }
 
-    let html = subTabsHtml + filterHtml + totaisHtml;
+    // Filtros + totais vão no bloco colapsável
+    const stickyEl = document.getElementById('lanc-sticky-header');
+    stickyEl.innerHTML = subTabsHtml + filterHtml + totaisHtml;
+    stickyEl.querySelectorAll('[data-subtab]').forEach(el => {
+      el.addEventListener('click', () => App.setLancSubTab(el.dataset.subtab));
+    });
+
+    // Só os lançamentos vão no feed
+    let html = '';
     if (!lancs.length) {
       html+=`<div class="empty-state"><div class="empty-icon">📭</div><div class="empty-title">Nenhum lançamento</div><div class="empty-sub">Toque no + para adicionar</div></div>`;
     } else {
       html+=lancs.map(l=>renderFeedItem(l,l.tipo==='fixo')).join('');
     }
     feedEl.innerHTML=html;
-    // Bind cliques nas sub-tabs de saída (data-attribute evita problemas de aspas)
-    feedEl.querySelectorAll('[data-subtab]').forEach(el => {
-      el.addEventListener('click', () => App.setLancSubTab(el.dataset.subtab));
-    });
   }
 
   function abrirFiltroCategoria() {
@@ -2088,7 +2092,7 @@ const App = (() => {
     await loadData(); // recarregar com as faturas atualizadas
     gotoScreen('screen-home',false);
 
-    // ── Scroll hide/show header estilo Safari ──
+    // ── Scroll hide/show filtros+totais estilo Safari ──
     (function() {
       const scrollEl = document.getElementById('lanc-scroll');
       const stickyEl = document.getElementById('lanc-sticky-header');
@@ -2102,19 +2106,14 @@ const App = (() => {
         requestAnimationFrame(() => {
           const y = scrollEl.scrollTop;
           const delta = y - lastY;
-          const headerH = stickyEl.offsetHeight;
 
-          if (delta > 4 && y > headerH && !hidden) {
-            // scrollando pra baixo → esconde
-            stickyEl.style.transform = `translateY(-${headerH}px)`;
+          if (delta > 4 && y > 40 && !hidden) {
+            stickyEl.style.maxHeight = '0px';
             stickyEl.style.opacity = '0';
-            stickyEl.style.pointerEvents = 'none';
             hidden = true;
           } else if (delta < -4 && hidden) {
-            // scrollando pra cima → mostra
-            stickyEl.style.transform = 'translateY(0)';
+            stickyEl.style.maxHeight = '300px';
             stickyEl.style.opacity = '1';
-            stickyEl.style.pointerEvents = '';
             hidden = false;
           }
           lastY = y;

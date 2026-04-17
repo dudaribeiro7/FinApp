@@ -747,8 +747,8 @@ select option{background:var(--bg3)}
      SCREEN: LANÇAMENTOS
 ══════════════════════════════════════ -->
 <div class="screen" id="screen-lancamentos">
-  <!-- Header fixo que esconde/aparece com scroll (estilo Safari) -->
-  <div id="lanc-sticky-header" style="flex-shrink:0;transition:transform 0.25s ease,opacity 0.25s ease;will-change:transform">
+  <!-- Header SEMPRE fixo -->
+  <div style="flex-shrink:0">
     <div class="page-header">
       <span class="page-title">Lançamentos</span>
       <div style="margin-left:auto;display:flex;gap:8px">
@@ -766,6 +766,9 @@ select option{background:var(--bg3)}
       <button class="seg-btn" onclick="App.setLancTab('fixos')" id="lt-fixos">Fixos</button>
     </div>
   </div>
+
+  <!-- Bloco colapsável: filtros + card de totais (esconde ao rolar pra baixo) -->
+  <div id="lanc-sticky-header" style="flex-shrink:0;overflow:hidden;transition:max-height 0.28s ease,opacity 0.28s ease;will-change:max-height,opacity;max-height:200px;opacity:1"></div>
 
   <div class="scroll-area fade-in" id="lanc-scroll">
     <div class="feed-list" id="lanc-feed"></div>
