@@ -554,8 +554,10 @@ const App = (() => {
     // ── Barra de totais dinâmicos ──────────────────
     const totalEntradas = lancs.filter(l=>l.tipo==='entrada'||l.tipo==='entrada_fixa').reduce((s,l)=>s+(isDateConfirmed(l.data)?l.valor:0),0);
     const totalSaidas = lancs.filter(l=>['debito','credito','fixo'].includes(l.tipo)).reduce((s,l)=>{
-      if (l.tipo==='fixo') return s+(l.pago?l.valor:0);
-      return s+(isDateConfirmed(l.data)?l.valor:0);
+      if (l.tipo==='fixo') return s+(l.pago ? l.valor : 0);
+      if (l.tipo==='debito') return s+(isDateConfirmed(l.data) ? l.valor : 0);
+      if (l.tipo==='credito') return s+(isDateConfirmed(l.data) ? (l.valorParcela||l.valor) : 0);
+      return s;
     },0);
     const saldo = totalEntradas - totalSaidas;
 
@@ -2085,6 +2087,41 @@ const App = (() => {
     for(const c of state.cartoes) await atualizarFaturaFixa(c.id);
     await loadData(); // recarregar com as faturas atualizadas
     gotoScreen('screen-home',false);
+
+    // ── Scroll hide/show header estilo Safari ──
+    (function() {
+      const scrollEl = document.getElementById('lanc-scroll');
+      const stickyEl = document.getElementById('lanc-sticky-header');
+      let lastY = 0;
+      let hidden = false;
+      let ticking = false;
+
+      scrollEl.addEventListener('scroll', () => {
+        if (ticking) return;
+        ticking = true;
+        requestAnimationFrame(() => {
+          const y = scrollEl.scrollTop;
+          const delta = y - lastY;
+          const headerH = stickyEl.offsetHeight;
+
+          if (delta > 4 && y > headerH && !hidden) {
+            // scrollando pra baixo → esconde
+            stickyEl.style.transform = `translateY(-${headerH}px)`;
+            stickyEl.style.opacity = '0';
+            stickyEl.style.pointerEvents = 'none';
+            hidden = true;
+          } else if (delta < -4 && hidden) {
+            // scrollando pra cima → mostra
+            stickyEl.style.transform = 'translateY(0)';
+            stickyEl.style.opacity = '1';
+            stickyEl.style.pointerEvents = '';
+            hidden = false;
+          }
+          lastY = y;
+          ticking = false;
+        });
+      }, { passive: true });
+    })();
   }
 
   return {

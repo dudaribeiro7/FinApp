@@ -747,22 +747,24 @@ select option{background:var(--bg3)}
      SCREEN: LANÇAMENTOS
 ══════════════════════════════════════ -->
 <div class="screen" id="screen-lancamentos">
-  <div class="page-header">
-    <span class="page-title">Lançamentos</span>
-    <div style="margin-left:auto;display:flex;gap:8px">
-      <div class="month-nav" style="padding:0;margin-bottom:0">
-        <button class="month-btn" onclick="App.changeMonth(-1)">&#8249;</button>
-        <span style="font-size:13px;font-weight:500;min-width:80px;text-align:center" id="lanc-month-label">Abril 2026</span>
-        <button class="month-btn" onclick="App.changeMonth(1)">&#8250;</button>
+  <!-- Header fixo que esconde/aparece com scroll (estilo Safari) -->
+  <div id="lanc-sticky-header" style="flex-shrink:0;transition:transform 0.25s ease,opacity 0.25s ease;will-change:transform">
+    <div class="page-header">
+      <span class="page-title">Lançamentos</span>
+      <div style="margin-left:auto;display:flex;gap:8px">
+        <div class="month-nav" style="padding:0;margin-bottom:0">
+          <button class="month-btn" onclick="App.changeMonth(-1)">&#8249;</button>
+          <span style="font-size:13px;font-weight:500;min-width:80px;text-align:center" id="lanc-month-label">Abril 2026</span>
+          <button class="month-btn" onclick="App.changeMonth(1)">&#8250;</button>
+        </div>
       </div>
     </div>
-  </div>
-
-  <div class="seg-ctrl" style="flex-shrink:0">
-    <button class="seg-btn active" onclick="App.setLancTab('todos')" id="lt-todos">Todos</button>
-    <button class="seg-btn" onclick="App.setLancTab('entradas')" id="lt-entradas">Entradas</button>
-    <button class="seg-btn" onclick="App.setLancTab('saidas')" id="lt-saidas">Saídas</button>
-    <button class="seg-btn" onclick="App.setLancTab('fixos')" id="lt-fixos">Fixos</button>
+    <div class="seg-ctrl" style="flex-shrink:0">
+      <button class="seg-btn active" onclick="App.setLancTab('todos')" id="lt-todos">Todos</button>
+      <button class="seg-btn" onclick="App.setLancTab('entradas')" id="lt-entradas">Entradas</button>
+      <button class="seg-btn" onclick="App.setLancTab('saidas')" id="lt-saidas">Saídas</button>
+      <button class="seg-btn" onclick="App.setLancTab('fixos')" id="lt-fixos">Fixos</button>
+    </div>
   </div>
 
   <div class="scroll-area fade-in" id="lanc-scroll">
