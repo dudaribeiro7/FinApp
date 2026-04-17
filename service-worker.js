@@ -1,5 +1,5 @@
 /* service-worker.js — Finanças PWA */
-const CACHE = 'financas-v6';
+const CACHE = 'financas-v7';
 const ASSETS = [
   '/',
   '/index.html',
