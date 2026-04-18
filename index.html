@@ -73,39 +73,30 @@ body.light-mode{
   --accent2:#7c6af7;
   --accent-dim:#6d5ef518;
 }
-html{
-  background:#0f0f12;
+html, body{
+  height:100%;
+  background:var(--bg);
 }
-body.light-mode ~ html, html:has(body.light-mode){background:#f0f2f5}
+body.light-mode{background:#f0f2f5}
 body{
   font-family:'DM Sans',sans-serif;
   color:var(--text);
-  background:var(--bg);
   max-width:430px;
   margin:0 auto;
-  position:relative;
 }
 
 /* ═══════════════════════════════════════
    LAYOUT / SCREENS
 ═══════════════════════════════════════ */
 #app{
-  position:fixed;
-  top:env(safe-area-inset-top,0px);
-  left:0;right:0;
-  bottom:env(safe-area-inset-bottom,0px);
-  max-width:430px;
-  margin:0 auto;
   display:flex;
   flex-direction:column;
-  overflow:hidden;
+  min-height:100%;
   background:var(--bg);
 }
 .screen{
   display:none;
   flex-direction:column;
-  height:100%;
-  overflow:hidden;
 }
 .screen.active{display:flex}
 
@@ -113,7 +104,7 @@ body{
   flex:1;
   overflow-y:auto;
   -webkit-overflow-scrolling:touch;
-  padding-bottom:80px;
+  padding-bottom:100px;
 }
 .scroll-area::-webkit-scrollbar{display:none}
 
@@ -140,12 +131,12 @@ body{
    NAV BAR
 ═══════════════════════════════════════ */
 .nav-bar{
-  position:fixed;bottom:env(safe-area-inset-bottom,0px);left:50%;
+  position:fixed;bottom:0;left:50%;
   transform:translateX(-50%);
   width:100%;max-width:430px;
   background:var(--bg2);
   border-top:0.5px solid var(--border);
-  padding:10px 0;
+  padding:10px 0 calc(10px + env(safe-area-inset-bottom,0px));
   display:flex;justify-content:space-around;align-items:center;
   z-index:100;
 }
