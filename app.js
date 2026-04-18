@@ -337,7 +337,7 @@ const App = (() => {
         <div class="feed-nome" style="color:var(--text2)">${l.descricao || 'Fatura '+cartao?.nome}</div>
         <div class="feed-cat" style="display:flex;align-items:center;gap:5px">
           <span style="font-size:10px;padding:1px 6px;border-radius:4px;background:#88889922;color:#888899">AUTO</span>
-          Pagamento fatura · ${cartao?.nome||'Cartão'}
+          Pagamento fatura · ${cartao?.nome||'Cartão'}${l.data?' · '+new Date(l.data+'T12:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}):''}
         </div>
       </div>
       <div class="feed-right">
