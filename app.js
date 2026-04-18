@@ -385,7 +385,7 @@ const App = (() => {
         corValor = 'var(--red)';
       }
     } else if (isCredito) {
-      corValor = cartao ? cartao.cor : 'var(--red)';
+      corValor = isEstorno ? 'var(--green)' : (cartao ? cartao.cor : 'var(--red)');
     } else {
       corValor = 'var(--text3)';
     }
@@ -393,8 +393,9 @@ const App = (() => {
     // bgCor do ícone — mantém baseado em tipo geral
     const bgCor = isEntrada ? 'var(--green-dim)' : isFixo ? '#88889922' :
                   isCredito && cartao ? cartao.cor+'28' : 'var(--red-dim)';
-    const sinal = isEntrada ? '+' : '-';
-    const valor = isCredito ? (l.valorParcela||0) : (l.valor||0);
+    const isEstorno = isCredito && l.estorno;
+    const sinal = (isEntrada || isEstorno) ? '+' : '-';
+    const valor = isCredito ? Math.abs(l.valorParcela||0) : (l.valor||0);
     const dataTxt = l.data ? new Date(l.data+'T12:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}) : '';
 
     // ── Nome em destaque: descrição > subcategoria > categoria ──
@@ -425,6 +426,7 @@ const App = (() => {
         detalhe += ` · pago em ${dpTxt}`;
       }
     } else if (isCredito && cartao) {
+      if (isEstorno) detalhe += ' · Estorno';
       detalhe += ` · ${cartao.nome}`;
       if (l.parcela && l.totalParcelas) detalhe += ` · ${l.parcela}/${l.totalParcelas}`;
     } else if (isDebito) {
@@ -803,6 +805,12 @@ const App = (() => {
               <div class="cat-name">${c.nome}</div></div>`;}).join('')}
           </div></div>
         ${campoCat}${campoDesc}
+        <div class="field" style="flex-direction:row;align-items:center;gap:10px;padding:12px 0">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:14px;color:var(--text2)">
+            <input type="checkbox" id="f-estorno" ${edit?.estorno?'checked':''} style="width:18px;height:18px;accent-color:var(--green);cursor:pointer">
+            Estorno (subtrai da fatura)
+          </label>
+        </div>
         <button class="submit-btn btn-credito" onclick="App._salvar()">${state.editingId?'Salvar alterações':'Salvar compra'}</button>
         ${btnExcluir}<div style="height:20px"></div>`;
       setTimeout(()=>_updateParcelas(),50);
@@ -948,7 +956,8 @@ const App = (() => {
       const dataCompra=data||todayStr();
       const dCompra=new Date(dataCompra+'T12:00:00');
       const diaCompra=dCompra.getDate();
-      const valorParcela=valor/n;
+      const estorno = document.getElementById('f-estorno')?.checked || false;
+      const valorParcela=(estorno ? -1 : 1) * (valor/n);
       // Lançamento SEMPRE fica no mês da compra (item 6)
       // Determinar o mês base da fatura:
       // dia_compra >= dia_fechamento → fatura do MÊS DA COMPRA (aparece neste mês)
@@ -967,10 +976,10 @@ const App = (() => {
           const maParcela = mesAnoStr(dParcela.getMonth(), dParcela.getFullYear());
           await DB.addLancamento({
             tipo:'credito',categoriaId:catId,subcat,descricao:desc,
-            mesAno:maParcela,          // mês da fatura onde esta parcela aparece
-            dataCompra:dataCompra,     // data original da compra (para referência)
+            mesAno:maParcela,
+            dataCompra:dataCompra,
             valorTotal:valor,totalParcelas:n,valorParcela,
-            parcela:i+1,cartaoId,data:dataCompra,grupoId,
+            parcela:i+1,cartaoId,data:dataCompra,grupoId,estorno,
           });
         }
         state.lancamentos=await DB.getLancamentos(mesAno);
@@ -983,7 +992,7 @@ const App = (() => {
         toast(`Compra salva — parcela 1 na ${nomesMes}`,'ok');
         goBack(); return;
       } else {
-        obj.valorTotal=valor;obj.totalParcelas=n;obj.valorParcela=valorParcela;obj.cartaoId=cartaoId;obj.data=dataCompra;
+        obj.valorTotal=valor;obj.totalParcelas=n;obj.valorParcela=valorParcela;obj.cartaoId=cartaoId;obj.data=dataCompra;obj.estorno=document.getElementById('f-estorno')?.checked||false;
       }
     }
 
