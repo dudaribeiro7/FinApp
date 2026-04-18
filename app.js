@@ -1872,8 +1872,8 @@ const App = (() => {
         valor: totalFatura,
         categoriaId: null,
         pago: existente?.pago || false,
-        data: existente?.data || dataVenc,
-        dataPagamento: existente?.dataPagamento || dataVenc,
+        data: dataVenc,
+        dataPagamento: existente?.dataPagamento || null,
         mesAno: mesPgtoKey,
         autoFatura: true,
         criadoEm: existente?.criadoEm || Date.now(),
@@ -2056,6 +2056,23 @@ const App = (() => {
     }
   }
 
+
+  async function migrarDataFaturas() {
+    const jaRodou = localStorage.getItem('migr_data_fatura_v1');
+    if (jaRodou) return;
+    const allLancs = await DB.getAllLancamentos();
+    const faturas = allLancs.filter(l => l.autoFatura && l.faturaCartaoId && !l.data);
+    for (const l of faturas) {
+      const cartao = getCartaoById(l.faturaCartaoId);
+      if (!cartao) continue;
+      const [mesStr, anoStr] = l.mesAno.split('-');
+      const diaVenc = cartao.vencimento || 10;
+      l.data = `${anoStr}-${mesStr}-${String(diaVenc).padStart(2,'0')}`;
+      await DB.updateLancamento(l);
+    }
+    console.log(`[migração] ${faturas.length} faturas com data de vencimento preenchida`);
+    localStorage.setItem('migr_data_fatura_v1', '1');
+  }
   async function migrarFaturasParaDebito() {
     // Roda uma vez por versão: corrige faturas autoFatura para pagamento=debito
     const jaRodou = localStorage.getItem('migr_fatura_debito_v2');
@@ -2080,6 +2097,8 @@ const App = (() => {
     _aplicarTema(temaSalvo);
     // Migração: corrigir faturas automáticas que estavam com pagamento=cartaoId
     await migrarFaturasParaDebito();
+    // Migração: preencher data das faturas automáticas com dia de vencimento do cartão
+    await migrarDataFaturas();
     // Verificar se voltou do OAuth do Google
     if (Sheets.handleOAuthCallback()) {
       toast('Conectado ao Google com sucesso!', 'ok');
