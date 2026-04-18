@@ -1861,17 +1861,21 @@ const App = (() => {
       );
 
       const cartao = getCartaoById(cartaoId);
+      const diaVenc = cartao?.vencimento || 10;
+      const dataVenc = `${dPgto.getFullYear()}-${String(dPgto.getMonth()+1).padStart(2,'0')}-${String(diaVenc).padStart(2,'0')}`;
       const obj = {
         tipo: 'fixo',
-        faturaCartaoId: cartaoId,   // marcador especial
-        cartaoId: null,             // pagamento é débito, não no cartão
-        pagamento: 'debito',        // fatura é paga no débito
+        faturaCartaoId: cartaoId,
+        cartaoId: null,
+        pagamento: 'debito',
         descricao: `Fatura ${cartao?.nome || 'Cartão'}`,
         valor: totalFatura,
         categoriaId: null,
         pago: existente?.pago || false,
+        data: existente?.data || dataVenc,
+        dataPagamento: existente?.dataPagamento || dataVenc,
         mesAno: mesPgtoKey,
-        autoFatura: true,           // não editável manualmente
+        autoFatura: true,
         criadoEm: existente?.criadoEm || Date.now(),
       };
 
