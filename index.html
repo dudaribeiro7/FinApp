@@ -89,7 +89,7 @@ body{
   position:relative;
   height:100%;
   height:-webkit-fill-available;
-  height:100dvh;
+  height:100svh;
   overflow:hidden;
 }
 
@@ -98,7 +98,7 @@ body{
 ═══════════════════════════════════════ */
 #app{
   height:100%;
-  height:100dvh;
+  height:100svh;
   display:flex;
   flex-direction:column;
   overflow:hidden;
@@ -761,8 +761,8 @@ select option{background:var(--bg3)}
      SCREEN: LANÇAMENTOS
 ══════════════════════════════════════ -->
 <div class="screen" id="screen-lancamentos">
-  <!-- Header SEMPRE fixo -->
-  <div style="flex-shrink:0">
+  <!-- Header colapsável ao scroll -->
+  <div id="lanc-main-header" style="flex-shrink:0;overflow:hidden;transition:max-height 0.28s ease,opacity 0.28s ease;will-change:max-height,opacity;max-height:200px;opacity:1">
     <div class="page-header">
       <span class="page-title">Lançamentos</span>
       <div style="margin-left:auto;display:flex;gap:8px">

@@ -2092,10 +2092,11 @@ const App = (() => {
     await loadData(); // recarregar com as faturas atualizadas
     gotoScreen('screen-home',false);
 
-    // ── Scroll hide/show filtros+totais estilo Safari ──
+    // ── Scroll hide/show header + filtros+totais estilo Safari ──
     (function() {
       const scrollEl = document.getElementById('lanc-scroll');
       const stickyEl = document.getElementById('lanc-sticky-header');
+      const mainEl   = document.getElementById('lanc-main-header');
       let lastY = 0;
       let hidden = false;
       let ticking = false;
@@ -2110,10 +2111,14 @@ const App = (() => {
           if (delta > 4 && y > 40 && !hidden) {
             stickyEl.style.maxHeight = '0px';
             stickyEl.style.opacity = '0';
+            mainEl.style.maxHeight = '0px';
+            mainEl.style.opacity = '0';
             hidden = true;
           } else if (delta < -4 && hidden) {
             stickyEl.style.maxHeight = '300px';
             stickyEl.style.opacity = '1';
+            mainEl.style.maxHeight = '200px';
+            mainEl.style.opacity = '1';
             hidden = false;
           }
           lastY = y;
