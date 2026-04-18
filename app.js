@@ -369,6 +369,7 @@ const App = (() => {
     const debitoConfirmado = isDebito && l.data && isDateConfirmed(l.data);
     const debitoPendente = isDebito && (!l.data || !isDateConfirmed(l.data));
 
+    const isEstorno = isCredito && l.estorno;
     let corValor;
     if (isEntrada) {
       corValor = (semData || pendente) ? 'var(--text3)' : 'var(--green)';
@@ -393,7 +394,6 @@ const App = (() => {
     // bgCor do ícone — mantém baseado em tipo geral
     const bgCor = isEntrada ? 'var(--green-dim)' : isFixo ? '#88889922' :
                   isCredito && cartao ? cartao.cor+'28' : 'var(--red-dim)';
-    const isEstorno = isCredito && l.estorno;
     const sinal = (isEntrada || isEstorno) ? '+' : '-';
     const valor = isCredito ? Math.abs(l.valorParcela||0) : (l.valor||0);
     const dataTxt = l.data ? new Date(l.data+'T12:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}) : '';
