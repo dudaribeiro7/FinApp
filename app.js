@@ -805,11 +805,11 @@ const App = (() => {
               <div class="cat-name">${c.nome}</div></div>`;}).join('')}
           </div></div>
         ${campoCat}${campoDesc}
-        <div class="field" style="flex-direction:row;align-items:center;gap:10px;padding:12px 0">
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:14px;color:var(--text2)">
-            <input type="checkbox" id="f-estorno" ${edit?.estorno?'checked':''} style="width:18px;height:18px;accent-color:var(--green);cursor:pointer">
-            Estorno (subtrai da fatura)
-          </label>
+        <div class="toggle-field" onclick="(function(){var t=document.getElementById('estorno-toggle');var v=t.dataset.on==='1';t.dataset.on=v?'0':'1';t.classList.toggle('on',!v);})()">
+          <span class="toggle-label">Estorno (subtrai da fatura)</span>
+          <div class="toggle ${edit?.estorno?'on':''}" id="estorno-toggle" data-on="${edit?.estorno?'1':'0'}">
+            <div class="toggle-thumb"></div>
+          </div>
         </div>
         <button class="submit-btn btn-credito" onclick="App._salvar()">${state.editingId?'Salvar alterações':'Salvar compra'}</button>
         ${btnExcluir}<div style="height:20px"></div>`;
@@ -956,7 +956,7 @@ const App = (() => {
       const dataCompra=data||todayStr();
       const dCompra=new Date(dataCompra+'T12:00:00');
       const diaCompra=dCompra.getDate();
-      const estorno = document.getElementById('f-estorno')?.checked || false;
+      const estorno = document.getElementById('estorno-toggle')?.dataset.on === '1';
       const valorParcela=(estorno ? -1 : 1) * (valor/n);
       // Lançamento SEMPRE fica no mês da compra (item 6)
       // Determinar o mês base da fatura:
@@ -992,7 +992,7 @@ const App = (() => {
         toast(`Compra salva — parcela 1 na ${nomesMes}`,'ok');
         goBack(); return;
       } else {
-        obj.valorTotal=valor;obj.totalParcelas=n;obj.valorParcela=valorParcela;obj.cartaoId=cartaoId;obj.data=dataCompra;obj.estorno=document.getElementById('f-estorno')?.checked||false;
+        obj.valorTotal=valor;obj.totalParcelas=n;obj.valorParcela=valorParcela;obj.cartaoId=cartaoId;obj.data=dataCompra;obj.estorno=document.getElementById('estorno-toggle')?.dataset.on==='1';
       }
     }
 
