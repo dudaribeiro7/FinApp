@@ -1,5 +1,6 @@
 /* ═══════════════════════════════════════════
    sheets.js — Google Sheets OAuth + Import
+   Configurado para a planilha da Luzia
    Client ID: 346072433497-5vi6svae58kqpgi3i2t6hp04djim5pcr.apps.googleusercontent.com
 ═══════════════════════════════════════════ */
 
@@ -55,7 +56,6 @@ const Sheets = (() => {
     if (!token) return false;
     if (state !== sessionStorage.getItem('oauth_state')) return false;
     storeToken(token, parseInt(expiresIn || 3600));
-    // Limpar hash da URL
     history.replaceState(null, '', window.location.pathname);
     return true;
   }
@@ -91,14 +91,12 @@ const Sheets = (() => {
     return data.values || [];
   }
 
-  // ── Extrai ID da URL do Google Sheets ─────
-
   function extractSpreadsheetId(url) {
     const m = url.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
     return m ? m[1] : null;
   }
 
-  // ── Helpers de parsing ────────────────────
+  // ── Helpers ───────────────────────────────
 
   const MESES_PT = {
     'janeiro':0,'fevereiro':1,'março':2,'marco':2,'abril':3,'maio':4,'junho':5,
@@ -106,7 +104,6 @@ const Sheets = (() => {
   };
 
   function parseMesAba(nomeAba) {
-    // "Abril 2026" → {mes:3, ano:2026}
     const parts = nomeAba.toLowerCase().trim().split(/\s+/);
     if (parts.length < 2) return null;
     const mes = MESES_PT[parts[0]];
@@ -116,42 +113,32 @@ const Sheets = (() => {
   }
 
   function colIndex(letter) {
-    // 'A'→0, 'B'→1, ... 'Z'→25, 'AA'→26 ...
     let n = 0;
     for (const c of letter.toUpperCase()) n = n * 26 + c.charCodeAt(0) - 64;
     return n - 1;
   }
 
   function cel(row, col) {
-    // row é array, col é letra como 'A', 'B', 'AA' etc
     const v = row ? row[colIndex(col)] : undefined;
     return v !== undefined && v !== null ? String(v).trim() : '';
   }
 
   function parseMoney(s) {
     if (!s) return 0;
-    // Remove R$, espaços, pontos de milhar, troca vírgula por ponto
-    const n = parseFloat(
-      String(s).replace(/[R$\s]/g,'').replace(/\./g,'').replace(',','.')
-    );
+    const cleaned = String(s).replace(/[R$\s]/g,'').replace(/\./g,'').replace(/,\s*/,'.').replace(',','.');
+    const n = parseFloat(cleaned);
     return isNaN(n) ? 0 : Math.abs(n);
   }
 
   function parseDate(s, mes, ano) {
     if (!s) return null;
     s = String(s).trim();
-    // Tenta "DD/MM/YYYY"
-    let m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+    m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
     if (m) return `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
-    // Tenta "DD/MM" → usa ano/mes do contexto
     m = s.match(/^(\d{1,2})\/(\d{1,2})$/);
     if (m) return `${ano}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
-    // Número serial do Excel (dias desde 30/12/1899)
-    const num = parseFloat(s);
-    if (!isNaN(num) && num > 1000) {
-      const d = new Date(Math.round((num - 25569) * 86400 * 1000));
-      return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`;
-    }
     return null;
   }
 
@@ -164,230 +151,181 @@ const Sheets = (() => {
     console.log('[Sheets]', msg);
   }
 
-  // ── Encontra categoria pelo nome ──────────
-
   function findCatId(cats, nomecat) {
     if (!nomecat) return { catId: null, subcat: null };
-    const n = nomecat.toLowerCase().trim();
-    // Busca exata
-    let c = cats.find(c => c.nome.toLowerCase() === n);
+    const limpar = s => s.replace(/[\u{1F300}-\u{1FFFF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]|\uFE0F|\u200D/gu,'').toLowerCase().trim();
+    const n = limpar(nomecat);
+    let c = cats.find(c => limpar(c.nome) === n);
     if (c) return { catId: c.id, subcat: null };
-    // Busca parcial
-    c = cats.find(c => n.includes(c.nome.toLowerCase()) || c.nome.toLowerCase().includes(n));
+    c = cats.find(c => n.includes(limpar(c.nome)) || limpar(c.nome).includes(n));
     if (c) return { catId: c.id, subcat: null };
-    // Busca em subcategorias
     for (const cat of cats) {
-      const sub = (cat.subcats || []).find(s => {
-        const sn = (typeof s === 'string' ? s : s.nome).toLowerCase();
-        return sn === n || n.includes(sn) || sn.includes(n);
+      const sub = (cat.subcats||[]).find(s => {
+        const sn = limpar(typeof s==='string'?s:s.nome);
+        return sn===n||n.includes(sn)||sn.includes(n);
       });
-      if (sub) return { catId: cat.id, subcat: typeof sub === 'string' ? sub : sub.nome };
+      if (sub) return { catId: cat.id, subcat: typeof sub==='string'?sub:sub.nome };
     }
     return { catId: null, subcat: null };
   }
 
   // ── Parser das abas ───────────────────────
+  //
+  // PLANILHA DA LUZIA — 2 formatos:
+  //
+  // FORMATO L1 (Out/2025 a Fev/2026) — dados linha 26 (idx 25):
+  //   GASTOS FIXOS:          B=nome, C=tipo, F=pago, G=categoria, H=valor
+  //   ENTRADAS:              J=nome, L=categoria, M=data, N=valor
+  //   DÉBITO:                P=nome, R=categoria, S=data, T=valor
+  //   CRÉDITO CAIXA MASTER:  V=nome, W=data_venc, X=categoria, Y=data, Z=valor
+  //   CRÉDITO CAIXA VISA:    AB=nome, AC=data_venc, AD=categoria, AE=data, AF=valor
+  //   CRÉDITO MERCADO PAGO:  AH=nome, AI=data_venc, AJ=categoria, AK=data, AL=valor
+  //
+  // FORMATO L2 (Mar/2026+) — dados linha 25 (idx 24):
+  //   ENTRADAS:              B=nome, D=categoria, E=data, G=valor
+  //   GASTOS FIXOS:          I=nome, K=tipo, L=pago, M=categoria, O=valor
+  //   DÉBITO:                Q=nome, R=categoria, S=data, U=valor
+  //   CRÉDITO CAIXA MASTER:  W=nome, X=data_venc, Y=categoria, Z=data, AB=valor
+  //   CRÉDITO CAIXA VISA:    AD=nome, AE=data_venc, AF=categoria, AG=data, AI=valor
+  //   CRÉDITO MERCADO PAGO:  AK=nome, AL=data_venc, AM=categoria, AN=data, AP=valor
 
   async function parseAba(spreadsheetId, nomeAba, cats, cartoes) {
-    const { mes, ano } = parseMesAba(nomeAba);
+    const parsed = parseMesAba(nomeAba);
+    if (!parsed) return null;
+    const { mes, ano } = parsed;
     const ma = mesAnoStr(mes, ano);
     const lancamentos = [];
 
-    // Determinar formato da aba
-    // Formato A: Março 2025
-    // Formato B: Abril 2025 – Março 2026
-    // Formato C: Abril 2026+
-    let fmt;
-    // Formato A: apenas Março 2025 (cabeçalho linha 17, sem coluna tipo nos fixos)
-    if (ano === 2025 && mes === 2) fmt = 'A';
-    // Formato C: Abril 2026 em diante
-    else if (ano > 2026 || (ano === 2026 && mes >= 3)) fmt = 'C';
-    // Formato B: todo o resto (Agosto 2024 - Março 2026)
-    else fmt = 'B';
+    // L2 = Março 2026 em diante; L1 = tudo antes
+    const fmt = (ano > 2026 || (ano === 2026 && mes >= 2)) ? 'L2' : 'L1';
 
-    // Buscar todas as células da aba (máximo razoável de linhas)
     let rows;
     try {
-      const range = `'${nomeAba}'!A1:AK80`;
-      const vals = await getSheetValues(spreadsheetId, range);
+      const vals = await getSheetValues(spreadsheetId, `'${nomeAba}'!A1:AP200`);
       rows = vals;
     } catch(e) {
       log(`⚠️ Erro ao ler aba "${nomeAba}": ${e.message}`);
-      return [];
+      return null;
     }
 
-    // Determinar linha do cabeçalho/dados
-    let dataStart;
-    if (fmt === 'A') dataStart = 17; // linha 18 (0-indexed: 17)
-    else if (fmt === 'B') {
-      // Abril-Agosto 2025: linha 17 (idx 17)
-      // Outros (incluindo 2024): linha 17 como padrão, exceto Out/25-Mar/26 que usam 22
-      if (ano === 2025 && mes >= 9) dataStart = 22; // Outubro-Dezembro 2025
-      else if (ano === 2026 && mes <= 2) dataStart = 22; // Jan-Mar 2026
-      else dataStart = 17; // 2024 e Abr-Set 2025
-    } else {
-      dataStart = 22; // linha 23
-    }
+    // Encontrar cartões da Luzia
+    const caixaMaster = cartoes.find(c => {
+      const n = c.nome.toLowerCase();
+      return (n.includes('caixa') && n.includes('master')) || (n.includes('master') && !n.includes('visa'));
+    });
+    const caixaVisa = cartoes.find(c => {
+      const n = c.nome.toLowerCase();
+      return (n.includes('caixa') && n.includes('visa')) || (n.includes('visa') && !n.includes('master'));
+    });
+    const mercadoPago = cartoes.find(c => {
+      const n = c.nome.toLowerCase();
+      return n.includes('mercado') || n.includes('mp');
+    });
 
-    // Saldo inicial: célula F2
-    const saldoCell = rows[1] ? cel(rows[1], 'F') : '';
-    const saldoIni = parseMoney(saldoCell);
-    if (saldoIni > 0) {
-      log(`  💰 Saldo inicial de ${nomeAba}: R$${saldoIni}`);
-    }
+    const dataStart = fmt === 'L1' ? 25 : 24;
 
-    const nuCartao = cartoes.find(c => c.nome.toLowerCase().includes('nubank') || c.nome.toLowerCase().includes('nu'));
-    const itauCartao = cartoes.find(c => c.nome.toLowerCase().includes('ita'));
-    const c6Cartao = cartoes.find(c => c.nome.toLowerCase().includes('c6'));
-
-    // Processar linhas de dados
     for (let i = dataStart; i < rows.length; i++) {
       const row = rows[i];
       if (!row || row.every(c => !c)) continue;
 
-      if (fmt === 'A') {
-        // Gastos fixos: B=nome, C=pago, D=cat, E=valor
-        const nomeF = cel(row, 'B');
-        const valorF = parseMoney(cel(row, 'E'));
-        if (nomeF && valorF > 0) {
-          const { catId, subcat } = findCatId(cats, cel(row, 'D'));
-          const pago = String(cel(row, 'C')).toLowerCase().includes('sim') || cel(row, 'C') === 'TRUE';
-          lancamentos.push({ tipo:'fixo', descricao:nomeF, valor:valorF, categoriaId:catId, subcat, pago, pagamento:'debito', mesAno:ma });
-        }
-        // Entradas: G=nome, I=cat, J=data, K=valor
-        const nomeE = cel(row, 'G');
-        const valorE = parseMoney(cel(row, 'K'));
-        if (nomeE && valorE > 0) {
-          const { catId, subcat } = findCatId(cats, cel(row, 'I'));
-          lancamentos.push({ tipo:'entrada', descricao:nomeE, valor:valorE, categoriaId:catId, subcat, data:parseDate(cel(row,'J'),mes,ano), mesAno:ma });
-        }
-        // Débito: M=nome, O=cat, P=data, Q=valor
-        const nomeD = cel(row, 'M');
-        const valorD = parseMoney(cel(row, 'Q'));
-        if (nomeD && valorD > 0) {
-          const { catId, subcat } = findCatId(cats, cel(row, 'O'));
-          lancamentos.push({ tipo:'debito', descricao:nomeD, valor:valorD, categoriaId:catId, subcat, data:parseDate(cel(row,'P'),mes,ano), mesAno:ma });
-        }
-        // Crédito Nu: S=nome, T=parcela, U=cat, V=data, W=valor
-        const nomeCN = cel(row, 'S');
-        const valorCN = parseMoney(cel(row, 'W'));
-        if (nomeCN && valorCN > 0 && nuCartao) {
-          const { catId, subcat } = findCatId(cats, cel(row, 'U'));
-          const parcelaStr = cel(row, 'T');
-          const [p, total] = parcelaStr.includes('/') ? parcelaStr.split('/').map(Number) : [1, 1];
-          lancamentos.push({ tipo:'credito', descricao:nomeCN, valorParcela:valorCN, valorTotal:valorCN*(total||1), totalParcelas:total||1, parcela:p||1, categoriaId:catId, subcat, data:parseDate(cel(row,'V'),mes,ano), cartaoId:nuCartao.id, mesAno:ma });
-        }
-      }
+      if (fmt === 'L1') {
 
-      else if (fmt === 'B') {
-        // Gastos fixos: B=nome, C=tipo, D=pago, E=cat, F=valor
-        const nomeF = cel(row, 'B');
-        const valorF = parseMoney(cel(row, 'F'));
+        // GASTOS FIXOS
+        const nomeF = cel(row,'B'), valorF = parseMoney(cel(row,'H'));
         if (nomeF && valorF > 0) {
-          const { catId, subcat } = findCatId(cats, cel(row, 'E'));
-          const pago = String(cel(row, 'D')).toLowerCase().includes('sim') || cel(row, 'D') === 'TRUE';
-          const tipoFixo = cel(row, 'C').toLowerCase();
-          const cartaoFixo = tipoFixo.includes('nubank') || tipoFixo.includes('nu') ? nuCartao?.id
-                           : tipoFixo.includes('ita') ? itauCartao?.id
-                           : tipoFixo.includes('c6') ? c6Cartao?.id : null;
-          lancamentos.push({ tipo:'fixo', descricao:nomeF, valor:valorF, categoriaId:catId, subcat, pago, pagamento:cartaoFixo?String(cartaoFixo):'debito', cartaoId:cartaoFixo||null, mesAno:ma });
+          const {catId,subcat} = findCatId(cats, cel(row,'G'));
+          const pago = ['true','sim'].includes(cel(row,'F').toLowerCase());
+          const t = cel(row,'C').toLowerCase();
+          const cId = t.includes('master') ? caixaMaster?.id : t.includes('visa') ? caixaVisa?.id : (t.includes('mercado')||t.includes('mp')) ? mercadoPago?.id : null;
+          lancamentos.push({tipo:'fixo',descricao:nomeF,valor:valorF,categoriaId:catId,subcat,pago,pagamento:cId?String(cId):'debito',cartaoId:cId||null,mesAno:ma});
         }
-        // Entradas: H=nome, J=cat, K=data, L=valor
-        const nomeE = cel(row, 'H');
-        const valorE = parseMoney(cel(row, 'L'));
-        if (nomeE && valorE > 0) {
-          const { catId, subcat } = findCatId(cats, cel(row, 'J'));
-          lancamentos.push({ tipo:'entrada', descricao:nomeE, valor:valorE, categoriaId:catId, subcat, data:parseDate(cel(row,'K'),mes,ano), mesAno:ma });
-        }
-        // Débito: N=nome, P=cat, Q=data, R=valor
-        const nomeD = cel(row, 'N');
-        const valorD = parseMoney(cel(row, 'R'));
-        if (nomeD && valorD > 0) {
-          const { catId, subcat } = findCatId(cats, cel(row, 'P'));
-          lancamentos.push({ tipo:'debito', descricao:nomeD, valor:valorD, categoriaId:catId, subcat, data:parseDate(cel(row,'Q'),mes,ano), mesAno:ma });
-        }
-        // Crédito Nu: T=nome, U=parcela, V=cat, W=data, X=valor
-        const nomeCN = cel(row, 'T');
-        const valorCN = parseMoney(cel(row, 'X'));
-        if (nomeCN && valorCN > 0 && nuCartao) {
-          const { catId, subcat } = findCatId(cats, cel(row, 'V'));
-          const ps = cel(row, 'U'); const [p,t] = ps.includes('/')?ps.split('/').map(Number):[1,1];
-          lancamentos.push({ tipo:'credito', descricao:nomeCN, valorParcela:valorCN, valorTotal:valorCN*(t||1), totalParcelas:t||1, parcela:p||1, categoriaId:catId, subcat, data:parseDate(cel(row,'W'),mes,ano), cartaoId:nuCartao.id, mesAno:ma });
-        }
-        // Crédito Itaú: Z=nome, AA=parcela, AB=cat, AC=data, AD=valor
-        const nomeCI = cel(row, 'Z');
-        const valorCI = parseMoney(cel(row, 'AD'));
-        if (nomeCI && valorCI > 0 && itauCartao) {
-          const { catId, subcat } = findCatId(cats, cel(row, 'AB'));
-          const ps = cel(row, 'AA'); const [p,t] = ps.includes('/')?ps.split('/').map(Number):[1,1];
-          lancamentos.push({ tipo:'credito', descricao:nomeCI, valorParcela:valorCI, valorTotal:valorCI*(t||1), totalParcelas:t||1, parcela:p||1, categoriaId:catId, subcat, data:parseDate(cel(row,'AC'),mes,ano), cartaoId:itauCartao.id, mesAno:ma });
-        }
-        // Crédito C6: AF=nome, AG=parcela, AH=cat, AI=data, AJ=valor
-        const nomeCC = cel(row, 'AF');
-        const valorCC = parseMoney(cel(row, 'AJ'));
-        if (nomeCC && valorCC > 0 && c6Cartao) {
-          const { catId, subcat } = findCatId(cats, cel(row, 'AH'));
-          const ps = cel(row, 'AG'); const [p,t] = ps.includes('/')?ps.split('/').map(Number):[1,1];
-          lancamentos.push({ tipo:'credito', descricao:nomeCC, valorParcela:valorCC, valorTotal:valorCC*(t||1), totalParcelas:t||1, parcela:p||1, categoriaId:catId, subcat, data:parseDate(cel(row,'AI'),mes,ano), cartaoId:c6Cartao.id, mesAno:ma });
-        }
-      }
 
-      else { // Formato C
-        // Entradas: B=nome, D=cat, E=data, F=valor
-        const nomeE = cel(row, 'B');
-        const valorE = parseMoney(cel(row, 'F'));
+        // ENTRADAS
+        const nomeE = cel(row,'J'), valorE = parseMoney(cel(row,'N'));
         if (nomeE && valorE > 0) {
-          const { catId, subcat } = findCatId(cats, cel(row, 'D'));
-          lancamentos.push({ tipo:'entrada', descricao:nomeE, valor:valorE, categoriaId:catId, subcat, data:parseDate(cel(row,'E'),mes,ano), mesAno:ma });
+          const {catId,subcat} = findCatId(cats, cel(row,'L'));
+          lancamentos.push({tipo:'entrada',descricao:nomeE,valor:valorE,categoriaId:catId,subcat,data:parseDate(cel(row,'M'),mes,ano),mesAno:ma});
         }
-        // Gastos fixos: H=nome, J=tipo, K=pago, L=cat, N=valor
-        const nomeF = cel(row, 'H');
-        const valorF = parseMoney(cel(row, 'N'));
-        if (nomeF && valorF > 0) {
-          const { catId, subcat } = findCatId(cats, cel(row, 'L'));
-          const pago = String(cel(row, 'K')).toLowerCase().includes('sim') || cel(row, 'K') === 'TRUE';
-          const tipoFixo = cel(row, 'J').toLowerCase();
-          const cartaoFixo = tipoFixo.includes('nubank') || tipoFixo.includes('nu') ? nuCartao?.id
-                           : tipoFixo.includes('ita') ? itauCartao?.id
-                           : tipoFixo.includes('c6') ? c6Cartao?.id : null;
-          lancamentos.push({ tipo:'fixo', descricao:nomeF, valor:valorF, categoriaId:catId, subcat, pago, pagamento:cartaoFixo?String(cartaoFixo):'debito', cartaoId:cartaoFixo||null, mesAno:ma });
-        }
-        // Débito: P=nome, Q=cat, R=data, S=valor
-        const nomeD = cel(row, 'P');
-        const valorD = parseMoney(cel(row, 'S'));
+
+        // DÉBITO
+        const nomeD = cel(row,'P'), valorD = parseMoney(cel(row,'T'));
         if (nomeD && valorD > 0) {
-          const { catId, subcat } = findCatId(cats, cel(row, 'Q'));
-          lancamentos.push({ tipo:'debito', descricao:nomeD, valor:valorD, categoriaId:catId, subcat, data:parseDate(cel(row,'R'),mes,ano), mesAno:ma });
+          const {catId,subcat} = findCatId(cats, cel(row,'R'));
+          lancamentos.push({tipo:'debito',descricao:nomeD,valor:valorD,categoriaId:catId,subcat,data:parseDate(cel(row,'S'),mes,ano),mesAno:ma});
         }
-        // Crédito Nu: U=nome, V=parcela, W=cat, X=data, Y=valor
-        const nomeCN = cel(row, 'U');
-        const valorCN = parseMoney(cel(row, 'Y'));
-        if (nomeCN && valorCN > 0 && nuCartao) {
-          const { catId, subcat } = findCatId(cats, cel(row, 'W'));
-          const ps = cel(row, 'V'); const [p,t] = ps.includes('/')?ps.split('/').map(Number):[1,1];
-          lancamentos.push({ tipo:'credito', descricao:nomeCN, valorParcela:valorCN, valorTotal:valorCN*(t||1), totalParcelas:t||1, parcela:p||1, categoriaId:catId, subcat, data:parseDate(cel(row,'X'),mes,ano), cartaoId:nuCartao.id, mesAno:ma });
+
+        // CRÉDITO CAIXA MASTER
+        const nomeCM = cel(row,'V'), valorCM = parseMoney(cel(row,'Z'));
+        if (nomeCM && valorCM > 0 && caixaMaster) {
+          const {catId,subcat} = findCatId(cats, cel(row,'X'));
+          lancamentos.push({tipo:'credito',descricao:nomeCM,valorParcela:valorCM,valorTotal:valorCM,totalParcelas:1,parcela:1,categoriaId:catId,subcat,data:parseDate(cel(row,'Y'),mes,ano),cartaoId:caixaMaster.id,mesAno:ma});
         }
-        // Crédito Itaú: AA=nome, AB=parcela, AC=cat, AD=data, AE=valor
-        const nomeCI = cel(row, 'AA');
-        const valorCI = parseMoney(cel(row, 'AE'));
-        if (nomeCI && valorCI > 0 && itauCartao) {
-          const { catId, subcat } = findCatId(cats, cel(row, 'AC'));
-          const ps = cel(row, 'AB'); const [p,t] = ps.includes('/')?ps.split('/').map(Number):[1,1];
-          lancamentos.push({ tipo:'credito', descricao:nomeCI, valorParcela:valorCI, valorTotal:valorCI*(t||1), totalParcelas:t||1, parcela:p||1, categoriaId:catId, subcat, data:parseDate(cel(row,'AD'),mes,ano), cartaoId:itauCartao.id, mesAno:ma });
+
+        // CRÉDITO CAIXA VISA
+        const nomeCV = cel(row,'AB'), valorCV = parseMoney(cel(row,'AF'));
+        if (nomeCV && valorCV > 0 && caixaVisa) {
+          const {catId,subcat} = findCatId(cats, cel(row,'AD'));
+          lancamentos.push({tipo:'credito',descricao:nomeCV,valorParcela:valorCV,valorTotal:valorCV,totalParcelas:1,parcela:1,categoriaId:catId,subcat,data:parseDate(cel(row,'AE'),mes,ano),cartaoId:caixaVisa.id,mesAno:ma});
         }
-        // Crédito C6: AG=nome, AH=parcela, AI=cat, AJ=data, AK=valor
-        const nomeCC = cel(row, 'AG');
-        const valorCC = parseMoney(cel(row, 'AK'));
-        if (nomeCC && valorCC > 0 && c6Cartao) {
-          const { catId, subcat } = findCatId(cats, cel(row, 'AI'));
-          const ps = cel(row, 'AH'); const [p,t] = ps.includes('/')?ps.split('/').map(Number):[1,1];
-          lancamentos.push({ tipo:'credito', descricao:nomeCC, valorParcela:valorCC, valorTotal:valorCC*(t||1), totalParcelas:t||1, parcela:p||1, categoriaId:catId, subcat, data:parseDate(cel(row,'AJ'),mes,ano), cartaoId:c6Cartao.id, mesAno:ma });
+
+        // CRÉDITO MERCADO PAGO
+        const nomeMPG = cel(row,'AH'), valorMPG = parseMoney(cel(row,'AL'));
+        if (nomeMPG && valorMPG > 0 && mercadoPago) {
+          const {catId,subcat} = findCatId(cats, cel(row,'AJ'));
+          lancamentos.push({tipo:'credito',descricao:nomeMPG,valorParcela:valorMPG,valorTotal:valorMPG,totalParcelas:1,parcela:1,categoriaId:catId,subcat,data:parseDate(cel(row,'AK'),mes,ano),cartaoId:mercadoPago.id,mesAno:ma});
+        }
+
+      } else { // FORMATO L2
+
+        // ENTRADAS
+        const nomeE = cel(row,'B'), valorE = parseMoney(cel(row,'G'));
+        if (nomeE && valorE > 0) {
+          const {catId,subcat} = findCatId(cats, cel(row,'D'));
+          lancamentos.push({tipo:'entrada',descricao:nomeE,valor:valorE,categoriaId:catId,subcat,data:parseDate(cel(row,'E'),mes,ano),mesAno:ma});
+        }
+
+        // GASTOS FIXOS
+        const nomeF = cel(row,'I'), valorF = parseMoney(cel(row,'O'));
+        if (nomeF && valorF > 0) {
+          const {catId,subcat} = findCatId(cats, cel(row,'M'));
+          const pago = ['true','sim'].includes(cel(row,'L').toLowerCase());
+          const t = cel(row,'K').toLowerCase();
+          const cId = t.includes('master') ? caixaMaster?.id : t.includes('visa') ? caixaVisa?.id : (t.includes('mercado')||t.includes('mp')) ? mercadoPago?.id : null;
+          lancamentos.push({tipo:'fixo',descricao:nomeF,valor:valorF,categoriaId:catId,subcat,pago,pagamento:cId?String(cId):'debito',cartaoId:cId||null,mesAno:ma});
+        }
+
+        // DÉBITO
+        const nomeD = cel(row,'Q'), valorD = parseMoney(cel(row,'U'));
+        if (nomeD && valorD > 0) {
+          const {catId,subcat} = findCatId(cats, cel(row,'R'));
+          lancamentos.push({tipo:'debito',descricao:nomeD,valor:valorD,categoriaId:catId,subcat,data:parseDate(cel(row,'S'),mes,ano),mesAno:ma});
+        }
+
+        // CRÉDITO CAIXA MASTER
+        const nomeCM = cel(row,'W'), valorCM = parseMoney(cel(row,'AB'));
+        if (nomeCM && valorCM > 0 && caixaMaster) {
+          const {catId,subcat} = findCatId(cats, cel(row,'Y'));
+          lancamentos.push({tipo:'credito',descricao:nomeCM,valorParcela:valorCM,valorTotal:valorCM,totalParcelas:1,parcela:1,categoriaId:catId,subcat,data:parseDate(cel(row,'Z'),mes,ano),cartaoId:caixaMaster.id,mesAno:ma});
+        }
+
+        // CRÉDITO CAIXA VISA
+        const nomeCV = cel(row,'AD'), valorCV = parseMoney(cel(row,'AI'));
+        if (nomeCV && valorCV > 0 && caixaVisa) {
+          const {catId,subcat} = findCatId(cats, cel(row,'AF'));
+          lancamentos.push({tipo:'credito',descricao:nomeCV,valorParcela:valorCV,valorTotal:valorCV,totalParcelas:1,parcela:1,categoriaId:catId,subcat,data:parseDate(cel(row,'AG'),mes,ano),cartaoId:caixaVisa.id,mesAno:ma});
+        }
+
+        // CRÉDITO MERCADO PAGO
+        const nomeMPG = cel(row,'AK'), valorMPG = parseMoney(cel(row,'AP'));
+        if (nomeMPG && valorMPG > 0 && mercadoPago) {
+          const {catId,subcat} = findCatId(cats, cel(row,'AM'));
+          lancamentos.push({tipo:'credito',descricao:nomeMPG,valorParcela:valorMPG,valorTotal:valorMPG,totalParcelas:1,parcela:1,categoriaId:catId,subcat,data:parseDate(cel(row,'AN'),mes,ano),cartaoId:mercadoPago.id,mesAno:ma});
         }
       }
     }
 
     log(`  ✓ ${nomeAba} [Fmt ${fmt}]: ${lancamentos.length} lançamentos`);
-    return { lancamentos, saldoIni, mesAno: ma };
+    return { lancamentos, mesAno: ma };
   }
 
   // ── Importação principal ─────────────────
@@ -404,13 +342,11 @@ const Sheets = (() => {
     const todasAbas = info.sheets.map(s => s.properties.title);
     log(`Planilha: "${info.properties.title}" — ${todasAbas.length} abas`);
 
-    // Filtrar apenas abas de meses válidos
     const abasMes = todasAbas.filter(a => parseMesAba(a) !== null);
     log(`Abas de meses encontradas: ${abasMes.length}`);
     onProgress({ step: 'info', msg: `${abasMes.length} meses encontrados`, abas: abasMes });
 
     let totalLancs = 0;
-    const saldos = {};
 
     for (let i = 0; i < abasMes.length; i++) {
       const aba = abasMes[i];
@@ -419,22 +355,11 @@ const Sheets = (() => {
       const result = await parseAba(spreadsheetId, aba, cats, cartoes);
       if (!result) continue;
 
-      const { lancamentos, saldoIni, mesAno } = result;
-
-      // Salvar saldo inicial se disponível
-      if (saldoIni > 0) saldos[mesAno] = saldoIni;
-
-      // Salvar lançamentos no IndexedDB
-      for (const l of lancamentos) {
+      for (const l of result.lancamentos) {
         l.criadoEm = Date.now();
         await DB.addLancamento(l);
         totalLancs++;
       }
-    }
-
-    // Salvar saldos iniciais
-    for (const [ma, val] of Object.entries(saldos)) {
-      localStorage.setItem('saldo_ini_' + ma, val);
     }
 
     log(`\n✅ Importação concluída: ${totalLancs} lançamentos em ${abasMes.length} meses`);
