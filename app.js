@@ -870,12 +870,13 @@ const App = (() => {
     const dCompra=new Date(data+'T12:00:00');
     const diaCompra=dCompra.getDate();
     // Mês base da fatura (mesma lógica do save)
-    // dia >= fechamento → fatura deste mês; dia < fechamento → fatura do mês anterior
+    // dia_compra < fechamento → ainda não fechou → fatura do mês da compra
+    // dia_compra >= fechamento → já fechou → fatura do mês seguinte
     const dMesBasePrev = new Date(dCompra);
-    if(diaCompra < fechamento) dMesBasePrev.setMonth(dMesBasePrev.getMonth()-1);
-    const faturaLabel = diaCompra >= fechamento
-      ? `fatura de ${MONTHS[dMesBasePrev.getMonth()]} (dia ${diaCompra} ≥ fechamento ${fechamento})`
-      : `fatura de ${MONTHS[dMesBasePrev.getMonth()]} (dia ${diaCompra} < fechamento ${fechamento})`;
+    if(diaCompra >= fechamento) dMesBasePrev.setMonth(dMesBasePrev.getMonth()+1);
+    const faturaLabel = diaCompra < fechamento
+      ? `fatura de ${MONTHS[dMesBasePrev.getMonth()]} (dia ${diaCompra} < fechamento ${fechamento})`
+      : `fatura de ${MONTHS[dMesBasePrev.getMonth()]} (dia ${diaCompra} ≥ fechamento ${fechamento}, próx. ciclo)`;
     const parcela=val/n;
     let rows='';
     for(let i=0;i<Math.min(n,6);i++){
@@ -958,13 +959,12 @@ const App = (() => {
       const diaCompra=dCompra.getDate();
       const estorno = document.getElementById('estorno-toggle')?.dataset.on === '1';
       const valorParcela=(estorno ? -1 : 1) * (valor/n);
-      // Lançamento SEMPRE fica no mês da compra (item 6)
-      // Determinar o mês base da fatura:
-      // dia_compra >= dia_fechamento → fatura do MÊS DA COMPRA (aparece neste mês)
-      // dia_compra <  dia_fechamento → fatura do MÊS ANTERIOR (aparece no mês anterior)
+      // Determinar o mês base da fatura (mesAno onde a parcela será cobrada):
+      // dia_compra < fechamento  → fatura ainda não fechou → entra na fatura do MÊS DA COMPRA
+      // dia_compra >= fechamento → fatura já fechou → entra na fatura do MÊS SEGUINTE
       let dMesBase = new Date(dCompra);
-      if (diaCompra < fechamento) {
-        dMesBase.setMonth(dMesBase.getMonth() - 1);
+      if (diaCompra >= fechamento) {
+        dMesBase.setMonth(dMesBase.getMonth() + 1);
       }
       const mesAnoCompra = mesAnoStr(dMesBase.getMonth(), dMesBase.getFullYear());
       if(!state.editingId){
@@ -987,8 +987,8 @@ const App = (() => {
         await atualizarFaturaFixa(cartaoId);
         state.lancamentos=await DB.getLancamentos(mesAno);
         const nomesMes = diaCompra<fechamento
-          ? `fatura de ${MONTHS[dMesBase.getMonth()]}`
-          : `fatura de ${MONTHS[dMesBase.getMonth()]} (fecha dia ${fechamento})`;
+          ? `fatura de ${MONTHS[dMesBase.getMonth()]} (ainda aberta)`
+          : `fatura de ${MONTHS[dMesBase.getMonth()]} (após fechamento dia ${fechamento})`;
         toast(`Compra salva — parcela 1 na ${nomesMes}`,'ok');
         goBack(); return;
       } else {
@@ -1854,11 +1854,17 @@ const App = (() => {
       );
       const totalFatura = credsMes.reduce((s, l) => s + (l.valorParcela || 0), 0);
 
-      // O pagamento da fatura é no mês seguinte
+      // Determinar o mês de pagamento da fatura:
+      // Se vencimento > fechamento → vence no mesmo mês do ciclo (ex: fecha dia 4, vence dia 10)
+      // Se vencimento <= fechamento → vence no mês seguinte (ex: fecha dia 20, vence dia 1)
+      const cartaoTemp = getCartaoById(cartaoId);
+      const fechamentoCartao = cartaoTemp?.fechamento || 5;
+      const vencimentoCartao = cartaoTemp?.vencimento || 10;
       const [mesStr, anoStr] = mesCredito.split('-');
       const mCred = parseInt(mesStr) - 1;
       const yCred = parseInt(anoStr);
-      const dPgto = new Date(yCred, mCred + 1, 1);
+      const mesesOffsetPgto = vencimentoCartao > fechamentoCartao ? 0 : 1;
+      const dPgto = new Date(yCred, mCred + mesesOffsetPgto, 1);
       const mesPgtoKey = mesAnoStr(dPgto.getMonth(), dPgto.getFullYear());
 
       // Não criar em meses passados
