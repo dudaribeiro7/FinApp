@@ -1901,17 +1901,14 @@ const App = (() => {
       );
       const totalFatura = credsMes.reduce((s, l) => s + (l.valorParcela || 0), 0);
 
-      // Determinar o mês de pagamento da fatura:
-      // Se vencimento > fechamento → vence no mesmo mês do ciclo (ex: fecha dia 4, vence dia 10)
-      // Se vencimento <= fechamento → vence no mês seguinte (ex: fecha dia 20, vence dia 1)
+      // O mesAno do crédito é a tela onde aparece. O pagamento é sempre no mês seguinte,
+      // com o dia de vencimento do cartão.
       const cartaoTemp = getCartaoById(cartaoId);
-      const fechamentoCartao = cartaoTemp?.fechamento || 5;
       const vencimentoCartao = cartaoTemp?.vencimento || 10;
       const [mesStr, anoStr] = mesCredito.split('-');
       const mCred = parseInt(mesStr) - 1;
       const yCred = parseInt(anoStr);
-      const mesesOffsetPgto = vencimentoCartao > fechamentoCartao ? 0 : 1;
-      const dPgto = new Date(yCred, mCred + mesesOffsetPgto, 1);
+      const dPgto = new Date(yCred, mCred + 1, vencimentoCartao);
       const mesPgtoKey = mesAnoStr(dPgto.getMonth(), dPgto.getFullYear());
 
       // Não criar em meses passados
