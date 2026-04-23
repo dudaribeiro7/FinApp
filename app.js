@@ -93,23 +93,25 @@ const App = (() => {
     const mCompra   = dCompra.getMonth();   // 0-based
     const yCompra   = dCompra.getFullYear();
 
-    // Passo 1: mês/ano do fechamento desta fatura
-    let dFech = new Date(yCompra, mCompra, 1);
+    // Passo 1: mês/ano do fechamento desta fatura (com o dia real de fechamento)
+    let dFech;
     if (fechamento <= diaCompra) {
       // fechamento já passou ou é hoje → fatura fecha neste mês
-      dFech = new Date(yCompra, mCompra, 1);
+      dFech = new Date(yCompra, mCompra, fechamento);
     } else {
       // fechamento ainda não chegou → fatura fecha no mês anterior
-      dFech = new Date(yCompra, mCompra - 1, 1);
+      dFech = new Date(yCompra, mCompra - 1, fechamento);
     }
 
-    // Passo 2: mês/ano do vencimento desta fatura
-    let dVenc = new Date(dFech);
-    if (vencimento <= fechamento) {
-      // vence depois do fechamento no calendário → próximo mês
-      dVenc = new Date(dFech.getFullYear(), dFech.getMonth() + 1, 1);
+    // Passo 2: data de vencimento desta fatura (com o dia real de vencimento)
+    let dVenc;
+    if (vencimento > fechamento) {
+      // vence no mesmo mês do fechamento
+      dVenc = new Date(dFech.getFullYear(), dFech.getMonth(), vencimento);
+    } else {
+      // vence no mês seguinte ao fechamento
+      dVenc = new Date(dFech.getFullYear(), dFech.getMonth() + 1, vencimento);
     }
-    // se vencimento > fechamento → mesmo mês do fechamento (dVenc já está correto)
 
     // Passo 3: qual tela (mesAno) a compra aparece
     // vencimento está 1 mês à frente do mês da compra → aparece no mês da compra
