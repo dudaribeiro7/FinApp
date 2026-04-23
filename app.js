@@ -93,44 +93,54 @@ const App = (() => {
     const mCompra   = dCompra.getMonth();   // 0-based
     const yCompra   = dCompra.getFullYear();
 
-    // Passo 1: mês/ano do fechamento desta fatura (com o dia real de fechamento)
-    let dFech;
+    // Passo 1: calcular mesAnoFechamento da fatura em que a compra entra
+    // Se diaFechamento <= diaCompra → a fatura desta compra fecha NESTE mês
+    // Se diaFechamento >  diaCompra → a fatura desta compra fecha no mês ANTERIOR
+    // (a compra foi feita antes do fechamento, então ainda está na fatura corrente)
+    let mFech, yFech;
     if (fechamento <= diaCompra) {
-      // fechamento já passou ou é hoje → fatura fecha neste mês
-      dFech = new Date(yCompra, mCompra, fechamento);
+      // A compra aconteceu APÓS o fechamento → entra na próxima fatura
+      // que fecha no próximo mês
+      mFech = mCompra + 1;
+      yFech = yCompra;
     } else {
-      // fechamento ainda não chegou → fatura fecha no mês anterior
-      dFech = new Date(yCompra, mCompra - 1, fechamento);
+      // A compra aconteceu ANTES do fechamento → ainda está na fatura atual
+      // que fecha neste mês
+      mFech = mCompra;
+      yFech = yCompra;
     }
+    // Normalizar mês (caso mFech = 12 → janeiro do ano seguinte)
+    const dFech = new Date(yFech, mFech, fechamento);
 
-    // Passo 2: data de vencimento desta fatura (com o dia real de vencimento)
+    // Passo 2: calcular data de vencimento desta fatura
+    // Se diaVencimento > diaFechamento → vence no mesmo mês do fechamento
+    // Se diaVencimento < diaFechamento → vence no mês seguinte ao fechamento
     let dVenc;
     if (vencimento > fechamento) {
-      // vence no mesmo mês do fechamento
       dVenc = new Date(dFech.getFullYear(), dFech.getMonth(), vencimento);
     } else {
-      // vence no mês seguinte ao fechamento
       dVenc = new Date(dFech.getFullYear(), dFech.getMonth() + 1, vencimento);
     }
 
-    // Passo 3: qual tela (mesAno) a compra aparece
-    // vencimento está 1 mês à frente do mês da compra → aparece no mês da compra
-    // vencimento está 2 meses à frente → aparece no mês da compra + 1
+    // Passo 3: em qual tela (mesAno) a compra aparece
+    // diffMeses = diferença entre mês do vencimento e mês da compra
     const mCompraBase = new Date(yCompra, mCompra, 1);
     const diffMeses = (dVenc.getFullYear() - mCompraBase.getFullYear()) * 12
                     + (dVenc.getMonth()    - mCompraBase.getMonth());
 
-    let dMesBase = new Date(yCompra, mCompra, 1);
+    let dMesBase;
     if (diffMeses === 0) {
-      // vencimento no mesmo mês da compra → fatura é do mês anterior
+      // vence no mesmo mês da compra → fatura aparece no mês anterior
       dMesBase = new Date(yCompra, mCompra - 1, 1);
-    } else if (diffMeses === 2) {
-      // vencimento 2 meses à frente → fatura é do mês seguinte
+    } else if (diffMeses === 1) {
+      // vence 1 mês após a compra → aparece no mês da compra
+      dMesBase = new Date(yCompra, mCompra, 1);
+    } else {
+      // vence 2+ meses após a compra → aparece no mês da compra + 1
       dMesBase = new Date(yCompra, mCompra + 1, 1);
     }
-    // diffMeses === 1 → fatura é do mês da compra (já correto)
 
-    return { dMesBase, dVenc };
+    return { dMesBase, dFech, dVenc };
   }
   function getCatEmoji(l) {
     const cat = getCatById(l.categoriaId);
@@ -920,8 +930,8 @@ const App = (() => {
     const vencimento=cartao?.vencimento||10;
     const dCompra=new Date(data+'T12:00:00');
     const diaCompra=dCompra.getDate();
-    const { dMesBase: dMesBasePrev, dVenc: dVencPrev } = calcMesAnoFatura(dCompra, fechamento, vencimento);
-    const faturaLabel = `fatura de ${MONTHS[dMesBasePrev.getMonth()]}/${dMesBasePrev.getFullYear()} · vence ${dVencPrev.getDate()}/${dVencPrev.getMonth()+1}`;
+    const { dMesBase: dMesBasePrev, dFech: dFechPrev, dVenc: dVencPrev } = calcMesAnoFatura(dCompra, fechamento, vencimento);
+    const faturaLabel = `fatura de ${MONTHS[dMesBasePrev.getMonth()]}/${dMesBasePrev.getFullYear()} · fecha ${dFechPrev.getDate()}/${dFechPrev.getMonth()+1} · vence ${dVencPrev.getDate()}/${dVencPrev.getMonth()+1}`;
     const parcela=val/n;
     let rows='';
     for(let i=0;i<Math.min(n,6);i++){
