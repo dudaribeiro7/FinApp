@@ -81,6 +81,51 @@ const App = (() => {
     return `<img src="${url}" width="${size}" height="${size}" style="border-radius:${size/4}px;object-fit:cover;flex-shrink:0" onerror="this.style.display='none'">`;
   }
   function getCartaoById(id) { return state.cartoes.find(c=>c.id===id); }
+
+  // Calcula em qual mesAno (tela) uma compra vai aparecer, dado o cartão e a data da compra.
+  // Lógica conforme especificação:
+  //   1) mesAnoFechamento: se diaFechamento <= diaCompra → mês da compra; senão → mês anterior
+  //   2) mesAnoVencimento: se diaVencimento > diaFechamento → mesmo mês do fechamento; senão → mês seguinte
+  //   3) mesAnoFatura (tela): se vencimento == compra+1 → mês da compra; se vencimento == compra+2 → mês da compra+1
+  // Retorna { dMesBase, mesAnoVencimento, offsetVencimento }
+  function calcMesAnoFatura(dCompra, fechamento, vencimento) {
+    const diaCompra = dCompra.getDate();
+    const mCompra   = dCompra.getMonth();   // 0-based
+    const yCompra   = dCompra.getFullYear();
+
+    // Passo 1: mês/ano do fechamento desta fatura
+    let dFech = new Date(yCompra, mCompra, 1);
+    if (fechamento <= diaCompra) {
+      // fechamento já passou ou é hoje → fatura fecha neste mês
+      dFech = new Date(yCompra, mCompra, 1);
+    } else {
+      // fechamento ainda não chegou → fatura fecha no mês anterior
+      dFech = new Date(yCompra, mCompra - 1, 1);
+    }
+
+    // Passo 2: mês/ano do vencimento desta fatura
+    let dVenc = new Date(dFech);
+    if (vencimento <= fechamento) {
+      // vence depois do fechamento no calendário → próximo mês
+      dVenc = new Date(dFech.getFullYear(), dFech.getMonth() + 1, 1);
+    }
+    // se vencimento > fechamento → mesmo mês do fechamento (dVenc já está correto)
+
+    // Passo 3: qual tela (mesAno) a compra aparece
+    // vencimento está 1 mês à frente do mês da compra → aparece no mês da compra
+    // vencimento está 2 meses à frente → aparece no mês da compra + 1
+    const mCompraBase = new Date(yCompra, mCompra, 1);
+    const diffMeses = (dVenc.getFullYear() - mCompraBase.getFullYear()) * 12
+                    + (dVenc.getMonth()    - mCompraBase.getMonth());
+
+    let dMesBase = new Date(yCompra, mCompra, 1);
+    if (diffMeses === 2) {
+      dMesBase = new Date(yCompra, mCompra + 1, 1);
+    }
+    // diffMeses === 1 → dMesBase = mês da compra (já correto)
+
+    return { dMesBase, dVenc };
+  }
   function getCatEmoji(l) {
     const cat = getCatById(l.categoriaId);
     if (!cat) return l.tipo==='entrada'||l.fixo ? '💰' : '💸';
@@ -869,14 +914,8 @@ const App = (() => {
     const vencimento=cartao?.vencimento||10;
     const dCompra=new Date(data+'T12:00:00');
     const diaCompra=dCompra.getDate();
-    // Mês base da fatura (mesma lógica do save)
-    // dia_compra < fechamento → ainda não fechou → fatura do mês da compra
-    // dia_compra >= fechamento → já fechou → fatura do mês seguinte
-    const dMesBasePrev = new Date(dCompra);
-    if(diaCompra >= fechamento) dMesBasePrev.setMonth(dMesBasePrev.getMonth()+1);
-    const faturaLabel = diaCompra < fechamento
-      ? `fatura de ${MONTHS[dMesBasePrev.getMonth()]} (dia ${diaCompra} < fechamento ${fechamento})`
-      : `fatura de ${MONTHS[dMesBasePrev.getMonth()]} (dia ${diaCompra} ≥ fechamento ${fechamento}, próx. ciclo)`;
+    const { dMesBase: dMesBasePrev, dVenc: dVencPrev } = calcMesAnoFatura(dCompra, fechamento, vencimento);
+    const faturaLabel = `fatura de ${MONTHS[dMesBasePrev.getMonth()]}/${dMesBasePrev.getFullYear()} · vence ${dVencPrev.getDate()}/${dVencPrev.getMonth()+1}`;
     const parcela=val/n;
     let rows='';
     for(let i=0;i<Math.min(n,6);i++){
@@ -885,7 +924,7 @@ const App = (() => {
       rows+=`<div class="parcela-row"><span class="parcela-mes">${i+1}/${n} · ${MONTHS[d.getMonth()]}/${d.getFullYear()}</span><span class="parcela-val">${fmtMoney(parcela)}</span></div>`;
     }
     if(n>6) rows+=`<div class="parcela-row"><span class="parcela-mes" style="color:var(--text3)">+ ${n-6} parcelas...</span></div>`;
-    rows+=`<div class="parcela-info">${faturaLabel} · vence dia ${vencimento}</div>`;
+    rows+=`<div class="parcela-info">${faturaLabel}</div>`;
     prevEl.innerHTML=`<div class="parcelas-box"><div class="parcelas-box-title">Distribuição das parcelas</div>${rows}</div>`;
   }
   function _getSelectedCatId(){const s=document.querySelector('#cat-grid .cat-chip.sel');return s?parseInt(s.dataset.catid):null;}
@@ -959,13 +998,8 @@ const App = (() => {
       const diaCompra=dCompra.getDate();
       const estorno = document.getElementById('estorno-toggle')?.dataset.on === '1';
       const valorParcela=(estorno ? -1 : 1) * (valor/n);
-      // Determinar o mês base da fatura (mesAno onde a parcela será cobrada):
-      // dia_compra < fechamento  → fatura ainda não fechou → entra na fatura do MÊS DA COMPRA
-      // dia_compra >= fechamento → fatura já fechou → entra na fatura do MÊS SEGUINTE
-      let dMesBase = new Date(dCompra);
-      if (diaCompra >= fechamento) {
-        dMesBase.setMonth(dMesBase.getMonth() + 1);
-      }
+      // Calcular em qual fatura (mesAno/tela) esta compra entra, usando a lógica correta
+      const { dMesBase } = calcMesAnoFatura(dCompra, fechamento, cartao?.vencimento||10);
       const mesAnoCompra = mesAnoStr(dMesBase.getMonth(), dMesBase.getFullYear());
       if(!state.editingId){
         const grupoId=Date.now();
@@ -986,10 +1020,7 @@ const App = (() => {
         // Atualizar gasto fixo de pagamento de fatura
         await atualizarFaturaFixa(cartaoId);
         state.lancamentos=await DB.getLancamentos(mesAno);
-        const nomesMes = diaCompra<fechamento
-          ? `fatura de ${MONTHS[dMesBase.getMonth()]} (ainda aberta)`
-          : `fatura de ${MONTHS[dMesBase.getMonth()]} (após fechamento dia ${fechamento})`;
-        toast(`Compra salva — parcela 1 na ${nomesMes}`,'ok');
+        toast(`Compra salva — parcela 1 na fatura de ${MONTHS[dMesBase.getMonth()]}/${dMesBase.getFullYear()}`,'ok');
         goBack(); return;
       } else {
         obj.valorTotal=valor;obj.totalParcelas=n;obj.valorParcela=valorParcela;obj.cartaoId=cartaoId;obj.data=dataCompra;obj.estorno=document.getElementById('estorno-toggle')?.dataset.on==='1';
