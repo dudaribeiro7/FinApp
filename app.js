@@ -119,10 +119,14 @@ const App = (() => {
                     + (dVenc.getMonth()    - mCompraBase.getMonth());
 
     let dMesBase = new Date(yCompra, mCompra, 1);
-    if (diffMeses === 2) {
+    if (diffMeses === 0) {
+      // vencimento no mesmo mês da compra → fatura é do mês anterior
+      dMesBase = new Date(yCompra, mCompra - 1, 1);
+    } else if (diffMeses === 2) {
+      // vencimento 2 meses à frente → fatura é do mês seguinte
       dMesBase = new Date(yCompra, mCompra + 1, 1);
     }
-    // diffMeses === 1 → dMesBase = mês da compra (já correto)
+    // diffMeses === 1 → fatura é do mês da compra (já correto)
 
     return { dMesBase, dVenc };
   }
