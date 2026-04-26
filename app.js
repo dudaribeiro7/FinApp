@@ -1909,11 +1909,16 @@ const App = (() => {
     if (!mesesComCredito.includes(mesAtualKey)) mesesComCredito.push(mesAtualKey);
 
     for (const mesCredito of mesesComCredito) {
-      // Calcular total de créditos neste mês para este cartão
-      const credsMes = allLancs.filter(l =>
-        l.tipo === 'credito' && l.cartaoId === cartaoId && l.mesAno === mesCredito
-      );
-      const totalFatura = credsMes.reduce((s, l) => s + (l.valorParcela || 0), 0);
+      // Calcular total da fatura usando EXATAMENTE a mesma lógica da tela inicial
+      // (mesma fórmula do creditoPorCartao em renderHome)
+      const lancsDoMes = allLancs.filter(l => l.mesAno === mesCredito);
+      let totalFatura = 0;
+      // créditos normais (compras parceladas/à vista no cartão)
+      lancsDoMes.filter(l => l.tipo === 'credito' && l.cartaoId === cartaoId)
+        .forEach(l => { totalFatura += (l.valorParcela || l.valor || 0); });
+      // fixos já pagos no cartão (ex: assinatura lançada como fixo no cartão)
+      lancsDoMes.filter(l => l.tipo === 'fixo' && l.pago && l.cartaoId === cartaoId)
+        .forEach(l => { totalFatura += (l.valor || 0); });
 
       // O mesAno do crédito é a tela onde aparece. O pagamento é sempre no mês seguinte,
       // com o dia de vencimento do cartão.
