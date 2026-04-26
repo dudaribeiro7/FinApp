@@ -234,21 +234,26 @@ const App = (() => {
     const allLancs = await DB.getAllLancamentos();
     const hasPrev = allLancs.some(l=>l.mesAno===mesAnoStr(prevM,prevY));
     if (!hasPrev) return 0;
-    return getSaldoFinalMesFechado(prevM, prevY, allLancs);
+    // Para carry-over, usar todos os lançamentos do mês anterior (último dia), não só até hoje
+    return getSaldoFinalMesFechado(prevM, prevY, allLancs, true);
   }
 
   // Calcula saldo final de um mês considerando APENAS lançamentos efetivados
-  // Para meses passados: entrada efetivada = data <= último dia do mês
-  // Para mês atual: entrada efetivada = data <= hoje
-  async function getSaldoFinalMesFechado(m, y, allLancs) {
+  // Para meses já encerrados (ou para carry-over): usa último dia do mês como limite
+  // Para o mês atual (exibição em tempo real): usa hoje como limite
+  // O parâmetro usarUltimoDia=true força o uso do último dia (para carry-over entre meses)
+  async function getSaldoFinalMesFechado(m, y, allLancs, usarUltimoDia=false) {
     const key = mesAnoStr(m, y);
     const lancs = allLancs ? allLancs.filter(l=>l.mesAno===key) : await DB.getLancamentos(key);
     const saldoIni = await getSaldoInicialMes(m, y);
 
-    // Limite de confirmação: para meses já encerrados = último dia do mês; para atual = hoje
+    // Limite de confirmação:
+    // - Se usarUltimoDia=true (carry-over): sempre usa último dia do mês
+    // - Se mês já encerrado: último dia do mês
+    // - Se mês atual: hoje
     const hoje = todayStr();
     const ultimoDiaMes = `${y}-${String(m+1).padStart(2,'0')}-${String(new Date(y,m+1,0).getDate()).padStart(2,'0')}`;
-    const limiteConfirmacao = ultimoDiaMes < hoje ? ultimoDiaMes : hoje;
+    const limiteConfirmacao = (usarUltimoDia || ultimoDiaMes < hoje) ? ultimoDiaMes : hoje;
 
     // Só entradas com data <= limiteConfirmacao (efetivamente recebidas)
     const entradas = lancs.filter(l=>l.tipo==='entrada' && l.data && l.data<=limiteConfirmacao)
