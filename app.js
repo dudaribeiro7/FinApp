@@ -225,17 +225,22 @@ const App = (() => {
   }
 
   async function getSaldoInicialMes(m, y) {
-    // Verificar se há valor salvo manualmente
     const saved = localStorage.getItem('saldo_ini_'+mesAnoStr(m,y));
     if (saved !== null) return parseFloat(saved);
-    // Saldo inicial = saldo final do mês anterior (usando lançamentos confirmados até o último dia daquele mês)
-    const prevM = m===0?11:m-1;
-    const prevY = m===0?y-1:y;
-    const allLancs = await DB.getAllLancamentos();
-    const hasPrev = allLancs.some(l=>l.mesAno===mesAnoStr(prevM,prevY));
-    if (!hasPrev) return 0;
-    // Para carry-over, usar todos os lançamentos do mês anterior (último dia), não só até hoje
-    return getSaldoFinalMesFechado(prevM, prevY, allLancs, true);
+    return 0;
+  }
+
+  // Salva o saldo final do mês como saldo inicial do mês seguinte
+  function propagarSaldoParaProximoMes(saldoFinal, m, y) {
+    const nextM = m===11?0:m+1;
+    const nextY = m===11?y+1:y;
+    const key = 'saldo_ini_'+mesAnoStr(nextM, nextY);
+    // Só sobrescreve se não houver valor salvo manualmente pelo usuário
+    // (usamos uma flag separada para distinguir manual de automático)
+    const isManual = localStorage.getItem('saldo_ini_manual_'+mesAnoStr(nextM, nextY));
+    if (!isManual) {
+      localStorage.setItem(key, String(saldoFinal));
+    }
   }
 
   // Calcula saldo final de um mês considerando APENAS lançamentos efetivados
@@ -297,6 +302,9 @@ const App = (() => {
     // saldo
     const saldoIni = await getSaldoInicialMes(state.currentMonth, state.currentYear);
     const saldoFinal = saldoIni + totalEntradas - totalSaidasDebito;
+
+    // Propagar saldo final como saldo inicial do próximo mês
+    propagarSaldoParaProximoMes(saldoFinal, state.currentMonth, state.currentYear);
 
     document.getElementById('home-month-label').textContent = `${MONTHS[state.currentMonth]} ${state.currentYear}`;
 
@@ -1230,6 +1238,7 @@ const App = (() => {
 
     const saldoIni=await getSaldoInicialMes(state.currentMonth,state.currentYear);
     const saldoFinal=saldoIni+entConf-debito-fixosDebPagos;
+    propagarSaldoParaProximoMes(saldoFinal, state.currentMonth, state.currentYear);
 
     const catItems=Object.entries(catTotals)
       .map(([id,val])=>({cat:getCatById(parseInt(id)),val}))
