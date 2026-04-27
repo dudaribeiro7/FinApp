@@ -165,6 +165,48 @@ body{
 }
 .divider-line{height:0.5px;background:var(--border);margin:0 20px 16px}
 
+/* ── Parcelamentos ─────────────────── */
+.parc-resumo-card{
+  background:var(--bg2);border:0.5px solid var(--border);border-radius:14px;
+  padding:12px 10px;display:flex;flex-direction:column;gap:4px;
+}
+.parc-resumo-label{font-size:9px;color:var(--text3);letter-spacing:0.8px;text-transform:uppercase}
+.parc-resumo-val{font-size:14px;font-weight:600;font-family:'DM Mono',monospace}
+.parc-chip-filtro{
+  flex-shrink:0;display:flex;align-items:center;gap:6px;padding:6px 12px;
+  border-radius:20px;border:0.5px solid var(--border2);background:var(--bg3);
+  font-size:12px;font-weight:500;color:var(--text2);cursor:pointer;
+  white-space:nowrap;transition:all 0.15s;font-family:'DM Sans',sans-serif;
+}
+.parc-chip-filtro.ativo{border-color:var(--accent);background:var(--accent-dim);color:var(--accent2)}
+.parc-item{
+  background:var(--bg2);border:0.5px solid var(--border);border-radius:14px;
+  padding:14px;margin-bottom:10px;cursor:pointer;transition:opacity 0.15s;
+}
+.parc-item:active{opacity:0.7}
+.parc-item-header{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.parc-item-icon{width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;overflow:hidden}
+.parc-item-title{font-size:14px;font-weight:500;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.parc-item-cartao{display:flex;align-items:center;gap:4px;font-size:10px;color:var(--text3);margin-top:2px}
+.parc-item-vals{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:8px}
+.parc-item-parcela{font-size:12px;color:var(--text2)}
+.parc-item-total{font-size:12px;color:var(--text3)}
+.parc-prog-wrap{display:flex;align-items:center;gap:8px}
+.parc-prog-bar{flex:1;height:4px;background:var(--bg4);border-radius:2px;overflow:hidden}
+.parc-prog-fill{height:100%;border-radius:2px;transition:width 0.4s ease}
+.parc-prog-label{font-size:10px;color:var(--text3);white-space:nowrap;font-family:'DM Mono',monospace}
+.parc-item-footer{margin-top:8px;display:flex;justify-content:space-between;align-items:center}
+.parc-badge{font-size:9px;padding:2px 7px;border-radius:4px;font-weight:500;letter-spacing:0.3px}
+.parc-item-detail{overflow:hidden;max-height:0;transition:max-height 0.3s ease}
+.parc-item-detail.open{max-height:600px}
+.parc-detalhe-row{display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:0.5px solid var(--border)}
+.parc-detalhe-row:last-child{border-bottom:none}
+.parc-impacto-item{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.parc-impacto-mes{font-size:12px;color:var(--text2);width:52px;flex-shrink:0}
+.parc-impacto-bar-wrap{flex:1;height:6px;background:var(--bg4);border-radius:3px;overflow:hidden}
+.parc-impacto-bar{height:100%;border-radius:3px;background:var(--accent)}
+.parc-impacto-val{font-size:11px;font-family:'DM Mono',monospace;color:var(--text2);width:64px;text-align:right;flex-shrink:0}
+
 /* saldo hero */
 .saldo-hero{
   margin:0 20px 16px;
@@ -728,7 +770,10 @@ select option{background:var(--bg3)}
     <div class="divider-line"></div>
 
     <!-- cartões -->
-    <div class="section-label">Cartões de crédito</div>
+    <div class="section-label" style="display:flex;justify-content:space-between;align-items:center;padding-right:20px">
+      <span>Cartões de crédito</span>
+      <span style="font-size:11px;color:var(--accent2);cursor:pointer" onclick="App.gotoScreen('screen-parcelamentos')">Ver parcelamentos</span>
+    </div>
     <div class="cartao-chips" id="h-cartoes"></div>
 
     <div class="divider-line"></div>
@@ -803,6 +848,49 @@ select option{background:var(--bg3)}
 <!-- ══════════════════════════════════════
      SCREEN: RELATÓRIOS
 ══════════════════════════════════════ -->
+<!-- ══════════════════════════════════════
+     SCREEN: PARCELAMENTOS
+══════════════════════════════════════ -->
+<div class="screen" id="screen-parcelamentos">
+  <div class="page-header" style="flex-shrink:0">
+    <button class="back-btn" onclick="App.goBack()">
+      <svg viewBox="0 0 24 24"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+    </button>
+    <span class="page-title">Parcelamentos</span>
+  </div>
+
+  <!-- Filtros sticky -->
+  <div id="parc-filtros" style="flex-shrink:0;padding:0 16px 12px">
+    <!-- Chips cartão -->
+    <div id="parc-chips-cartao" style="display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding-bottom:8px"></div>
+    <!-- Chips categoria -->
+    <div id="parc-chips-cat" style="display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px"></div>
+  </div>
+
+  <div class="scroll-area" id="parc-scroll">
+    <!-- Cards resumo -->
+    <div id="parc-resumo" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;padding:0 16px 16px"></div>
+
+    <!-- Impacto mensal -->
+    <div id="parc-impacto-wrap" style="padding:0 16px 16px">
+      <div class="section-label" style="margin-bottom:10px;display:flex;justify-content:space-between;align-items:center">
+        <span>Impacto mensal futuro</span>
+        <span id="parc-toggle-impacto" style="font-size:11px;color:var(--accent2);cursor:pointer" onclick="App._parcToggleImpacto()">ocultar</span>
+      </div>
+      <div id="parc-impacto"></div>
+    </div>
+
+    <div class="divider-line" style="margin:0 0 12px"></div>
+
+    <!-- Lista de parcelamentos -->
+    <div style="padding:0 16px">
+      <div class="section-label" style="margin-bottom:10px" id="parc-lista-label">Compras parceladas</div>
+      <div id="parc-lista"></div>
+    </div>
+    <div style="height:20px"></div>
+  </div>
+</div>
+
 <div class="screen" id="screen-relatorios">
   <div class="page-header">
     <button class="back-btn" onclick="App.goBack()">

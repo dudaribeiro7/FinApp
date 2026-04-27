@@ -17,6 +17,10 @@ const App = (() => {
     cfgTab: 'categorias',
     editingId: null,
     cartaoFiltro: null,
+    parcFiltroCartao: null,
+    parcFiltroCat: null,
+    parcImpactoVisible: true,
+    parcAbertos: new Set(),
     lancamentos: [],
     categorias: [],
     cartoes: [],
@@ -181,7 +185,7 @@ const App = (() => {
     document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
     document.getElementById(id).classList.add('active');
     state.currentScreen = id;
-    const navMap = {'screen-home':'nav-home','screen-lancamentos':'nav-lancamentos','screen-relatorios':'nav-relatorios','screen-perfil':'nav-perfil'};
+    const navMap = {'screen-home':'nav-home','screen-lancamentos':'nav-lancamentos','screen-relatorios':'nav-relatorios','screen-perfil':'nav-perfil','screen-parcelamentos':'nav-relatorios'};
     document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
     if (navMap[id]) document.getElementById(navMap[id])?.classList.add('active');
     if (id==='screen-home') renderHome();
@@ -189,6 +193,7 @@ const App = (() => {
     if (id==='screen-relatorios') renderRelatorios();
     if (id==='screen-perfil') renderPerfil();
     if (id==='screen-sheets') renderSheetsScreen();
+    if (id==='screen-parcelamentos') renderParcelamentos();
   }
   function goBack() { gotoScreen(state.prevScreen || 'screen-home'); }
   function novoLancamento() {
@@ -2229,9 +2234,247 @@ const App = (() => {
     })();
   }
 
+  /* ══════════════════════════════════════
+     PARCELAMENTOS
+  ══════════════════════════════════════ */
+  async function renderParcelamentos() {
+    const todos = await DB.getAllLancamentos();
+    const creditos = todos.filter(l => l.tipo === 'credito' && l.totalParcelas > 1 && l.grupoId);
+
+    // Agrupar por grupoId
+    const grupos = {};
+    creditos.forEach(l => {
+      if (!grupos[l.grupoId]) grupos[l.grupoId] = [];
+      grupos[l.grupoId].push(l);
+    });
+
+    const hoje = new Date();
+    const mesHojeKey = mesAnoStr(hoje.getMonth(), hoje.getFullYear());
+
+    const compras = Object.values(grupos).map(parcelas => {
+      parcelas.sort((a,b) => a.parcela - b.parcela);
+      const primeira = parcelas[0];
+      const cartao = getCartaoById(primeira.cartaoId);
+      const cat = getCatById(primeira.categoriaId);
+      const valorParcela = primeira.valorParcela || 0;
+      const n = primeira.totalParcelas || parcelas.length;
+      const totalCompra = primeira.valorTotal || (valorParcela * n);
+
+      const pagas = parcelas.filter(p => {
+        const [mm, yy] = p.mesAno.split('-').map(Number);
+        return mesAnoStr(mm-1, yy) <= mesHojeKey;
+      }).length;
+      const restantes = n - pagas;
+      const totalPago = pagas * valorParcela;
+      const totalFalta = restantes * valorParcela;
+
+      const proxima = parcelas.find(p => {
+        const [mm, yy] = p.mesAno.split('-').map(Number);
+        return mesAnoStr(mm-1, yy) > mesHojeKey;
+      });
+
+      const ultima = parcelas[parcelas.length - 1];
+      const [ulMm, ulYy] = ultima.mesAno.split('-').map(Number);
+
+      return {
+        grupoId: primeira.grupoId,
+        descricao: primeira.descricao || cat?.nome || 'Compra parcelada',
+        cartao, cat,
+        totalCompra, valorParcela, n, pagas, restantes, totalPago, totalFalta,
+        proxima, ultimaMes: ulMm-1, ultimaAno: ulYy,
+        parcelas,
+        concluida: restantes === 0,
+        cartaoId: primeira.cartaoId,
+        categoriaId: primeira.categoriaId,
+      };
+    });
+
+    // Filtros
+    const filtCartao = state.parcFiltroCartao;
+    const filtCat = state.parcFiltroCat;
+    const comprasFiltradas = compras.filter(c => {
+      if (filtCartao && c.cartaoId !== filtCartao) return false;
+      if (filtCat && c.categoriaId !== filtCat) return false;
+      return true;
+    });
+
+    const abertas = comprasFiltradas.filter(c => !c.concluida);
+    const concluidas = comprasFiltradas.filter(c => c.concluida);
+
+    // ── Chips cartão ─────────────────────
+    const cartaoChipsEl = document.getElementById('parc-chips-cartao');
+    const cartoesComParc = [...new Set(compras.map(c=>c.cartaoId))]
+      .map(id => state.cartoes.find(c=>c.id===id)).filter(Boolean);
+    cartaoChipsEl.innerHTML = [
+      `<div class="parc-chip-filtro ${!filtCartao?'ativo':''}" onclick="App._parcFiltroCartao(null)">Todos</div>`,
+      ...cartoesComParc.map(c => {
+        const icon = getBancoIconHtml(c.nome, 16);
+        const ativo = filtCartao === c.id;
+        return `<div class="parc-chip-filtro ${ativo?'ativo':''}" onclick="App._parcFiltroCartao(${c.id})" style="${ativo?`border-color:${c.cor};color:${c.cor};background:${c.cor}18`:''}">
+          ${icon||`<span style="width:8px;height:8px;border-radius:50%;background:${c.cor};display:inline-block;flex-shrink:0"></span>`}
+          ${c.nome}
+        </div>`;
+      })
+    ].join('');
+
+    // ── Chips categoria ──────────────────
+    const catChipsEl = document.getElementById('parc-chips-cat');
+    const catsComParc = [...new Set(compras.map(c=>c.categoriaId))]
+      .map(id => state.categorias.find(c=>c.id===id)).filter(Boolean);
+    catChipsEl.innerHTML = [
+      `<div class="parc-chip-filtro ${!filtCat?'ativo':''}" onclick="App._parcFiltroCat(null)">Todas cats</div>`,
+      ...catsComParc.map(c => {
+        const ativo = filtCat === c.id;
+        return `<div class="parc-chip-filtro ${ativo?'ativo':''}" onclick="App._parcFiltroCat(${c.id})">
+          ${c.emoji||'📦'} ${c.nome}
+        </div>`;
+      })
+    ].join('');
+
+    // ── Cards resumo ─────────────────────
+    const totalComprometido = abertas.reduce((s,c)=>s+c.totalCompra,0);
+    const totalPagoGeral = abertas.reduce((s,c)=>s+c.totalPago,0);
+    const totalFaltaGeral = abertas.reduce((s,c)=>s+c.totalFalta,0);
+    document.getElementById('parc-resumo').innerHTML = [
+      {label:'Comprometido', val:totalComprometido, cor:'var(--text)'},
+      {label:'Já pago',      val:totalPagoGeral,    cor:'var(--green)'},
+      {label:'Ainda falta',  val:totalFaltaGeral,   cor:'var(--red)'},
+    ].map(({label,val,cor})=>`
+      <div class="parc-resumo-card">
+        <div class="parc-resumo-label">${label}</div>
+        <div class="parc-resumo-val" style="color:${cor}">${fmtMoney(val)}</div>
+      </div>`).join('');
+
+    // ── Impacto mensal ───────────────────
+    const impactoEl = document.getElementById('parc-impacto');
+    document.getElementById('parc-toggle-impacto').textContent = state.parcImpactoVisible ? 'ocultar' : 'mostrar';
+    if (state.parcImpactoVisible) {
+      const impactoMap = {};
+      abertas.forEach(c => c.parcelas.forEach(p => {
+        const [mm, yy] = p.mesAno.split('-').map(Number);
+        const key = mesAnoStr(mm-1, yy);
+        if (key >= mesHojeKey) impactoMap[key] = (impactoMap[key]||0) + (p.valorParcela||0);
+      }));
+      const meses = Object.keys(impactoMap).sort().slice(0,12);
+      const maxVal = Math.max(...meses.map(k=>impactoMap[k]), 1);
+      impactoEl.innerHTML = meses.length ? meses.map(k => {
+        const [mmStr, yyStr] = k.split('-');
+        const label = MONTHS_SHORT[parseInt(mmStr)-1]+'/'+yyStr.slice(2);
+        const pct = Math.round((impactoMap[k]/maxVal)*100);
+        return `<div class="parc-impacto-item">
+          <div class="parc-impacto-mes">${label}</div>
+          <div class="parc-impacto-bar-wrap"><div class="parc-impacto-bar" style="width:${pct}%"></div></div>
+          <div class="parc-impacto-val">${fmtMoney(impactoMap[k])}</div>
+        </div>`;
+      }).join('') : `<div style="text-align:center;color:var(--text3);font-size:13px;padding:8px 0">Sem parcelas futuras</div>`;
+    } else {
+      impactoEl.innerHTML = '';
+    }
+
+    // ── Lista ────────────────────────────
+    const listaEl = document.getElementById('parc-lista');
+    document.getElementById('parc-lista-label').textContent = `Compras em aberto (${abertas.length})`;
+
+    function renderItem(c, isConcluida) {
+      const cor = c.cartao?.cor || 'var(--accent)';
+      const iconCartao = c.cartao ? (getBancoIconHtml(c.cartao.nome, 16)||'') : '';
+      const iconCat = c.cat?.emoji || '📦';
+      const pct = Math.round((c.pagas/c.n)*100);
+      const mesFim = MONTHS_SHORT[c.ultimaMes]+'/'+String(c.ultimaAno).slice(2);
+      const aberto = state.parcAbertos.has(c.grupoId);
+
+      if (isConcluida) {
+        return `<div class="parc-item" style="opacity:0.45;cursor:default">
+          <div class="parc-item-header">
+            <div class="parc-item-icon" style="background:${cor}18"><span style="font-size:18px">${iconCat}</span></div>
+            <div style="flex:1;min-width:0">
+              <div class="parc-item-title">${c.descricao}</div>
+              <div class="parc-item-cartao">${iconCartao}<span>${c.cartao?.nome||'Cartão'} · quitado em ${mesFim}</span></div>
+            </div>
+            <span class="parc-badge" style="background:var(--green-dim);color:var(--green);align-self:flex-start">quitado</span>
+          </div>
+          <div class="parc-prog-wrap" style="margin-top:4px">
+            <div class="parc-prog-bar"><div class="parc-prog-fill" style="width:100%;background:var(--green)"></div></div>
+            <span class="parc-prog-label" style="color:var(--green)">100%</span>
+          </div>
+        </div>`;
+      }
+
+      const detalheRows = c.parcelas.map(p => {
+        const [mm, yy] = p.mesAno.split('-').map(Number);
+        const key = mesAnoStr(mm-1, yy);
+        const pago = key <= mesHojeKey;
+        const isProx = !pago && p.mesAno === c.proxima?.mesAno;
+        const mesLabel = MONTHS_SHORT[mm-1]+'/'+String(yy).slice(2);
+        return `<div class="parc-detalhe-row">
+          <span style="font-size:12px;color:${pago?'var(--text3)':isProx?cor:'var(--text2)'}">
+            ${pago?'✓':isProx?'→':'·'} ${p.parcela}/${c.n} · ${mesLabel}${isProx?' <span style="font-size:9px;padding:1px 5px;border-radius:4px;background:'+cor+'22;color:'+cor+'">próxima</span>':''}
+          </span>
+          <span style="font-size:12px;font-family:\'DM Mono\',monospace;color:${pago?'var(--text3)':isProx?cor:'var(--text2)'}${pago?';text-decoration:line-through':''}">
+            ${fmtMoney(p.valorParcela||0)}
+          </span>
+        </div>`;
+      }).join('');
+
+      return `<div class="parc-item" onclick="App._parcToggleItem(${c.grupoId},event)">
+        <div class="parc-item-header">
+          <div class="parc-item-icon" style="background:${cor}18"><span style="font-size:18px">${iconCat}</span></div>
+          <div style="flex:1;min-width:0">
+            <div class="parc-item-title">${c.descricao}</div>
+            <div class="parc-item-cartao">${iconCartao}<span>${c.cartao?.nome||'Cartão'} · termina ${mesFim}</span></div>
+          </div>
+          <div style="text-align:right;flex-shrink:0">
+            <div style="font-size:13px;font-weight:600;font-family:\'DM Mono\',monospace;color:${cor}">${fmtMoney(c.valorParcela)}<span style="font-size:10px;color:var(--text3);font-weight:400">/mês</span></div>
+            <div style="font-size:10px;color:var(--text3)">${c.pagas}/${c.n} pagas</div>
+          </div>
+        </div>
+        <div class="parc-item-vals">
+          <span class="parc-item-parcela">Falta <strong style="color:var(--red)">${fmtMoney(c.totalFalta)}</strong></span>
+          <span class="parc-item-total">Total ${fmtMoney(c.totalCompra)}</span>
+        </div>
+        <div class="parc-prog-wrap">
+          <div class="parc-prog-bar"><div class="parc-prog-fill" style="width:${pct}%;background:${cor}"></div></div>
+          <span class="parc-prog-label">${pct}%</span>
+        </div>
+        <div class="parc-item-detail ${aberto?'open':''}" id="parc-det-${c.grupoId}">
+          <div style="margin-top:12px;padding-top:8px;border-top:0.5px solid var(--border)">
+            ${detalheRows}
+            <div style="display:flex;justify-content:space-between;padding-top:8px;margin-top:4px;border-top:0.5px solid var(--border)">
+              <span style="font-size:11px;color:var(--text3)">Total pago</span>
+              <span style="font-size:11px;font-family:\'DM Mono\',monospace;color:var(--green)">${fmtMoney(c.totalPago)}</span>
+            </div>
+          </div>
+        </div>
+        ${aberto?`<div style="text-align:center;margin-top:6px"><span style="font-size:10px;color:var(--text3)">▲ fechar</span></div>`:`<div style="text-align:center;margin-top:6px"><span style="font-size:10px;color:var(--text3)">▼ ver parcelas</span></div>`}
+      </div>`;
+    }
+
+    let html = abertas.map(c=>renderItem(c,false)).join('');
+    if (concluidas.length) {
+      html += `<div style="margin:16px 0 10px;font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--text3)">Concluídas (${concluidas.length})</div>`;
+      html += concluidas.map(c=>renderItem(c,true)).join('');
+    }
+    if (!html) html = `<div style="text-align:center;padding:40px 0;color:var(--text3)">
+      <div style="font-size:40px;margin-bottom:12px">🎉</div>
+      <div style="font-size:14px">Nenhum parcelamento encontrado</div>
+    </div>`;
+
+    listaEl.innerHTML = html;
+  }
+
+  function _parcFiltroCartao(id) { state.parcFiltroCartao = id; renderParcelamentos(); }
+  function _parcFiltroCat(id)    { state.parcFiltroCat = id;    renderParcelamentos(); }
+  function _parcToggleItem(grupoId) {
+    if (state.parcAbertos.has(grupoId)) state.parcAbertos.delete(grupoId);
+    else state.parcAbertos.add(grupoId);
+    renderParcelamentos();
+  }
+  function _parcToggleImpacto() { state.parcImpactoVisible = !state.parcImpactoVisible; renderParcelamentos(); }
+
   return {
     gotoScreen,goBack,novoLancamento,changeMonth,
     renderHome,renderLancamentos,renderRelatorios,renderPerfil,
+    renderParcelamentos,_parcFiltroCartao,_parcFiltroCat,_parcToggleItem,_parcToggleImpacto,
     setLancTab,setLancSubTab,editLancamento,toggleFixoPago,
     abrirCartao,abrirFiltroCategoria,_toggleFiltroItem,limparFiltroCategoria,
     setTipoLanc,_maskMoney,_selCat,_selSubcat,_selPay,_selCartao,_updateParcelas,
