@@ -1245,7 +1245,7 @@ const App = (() => {
   ══════════════════════════════════════ */
   function setRelTab(tab){
     state.relTab=tab;
-    ['mensal','evolucao','parcelamentos'].forEach(t=>document.getElementById('rt-'+t)?.classList.toggle('active',t===tab));
+    ['mensal','evolucao','cartoes','parcelamentos'].forEach(t=>document.getElementById('rt-'+t)?.classList.toggle('active',t===tab));
     const nav=document.getElementById('rel-month-nav');
     if(nav) nav.style.display=tab==='mensal'?'flex':'none';
     renderRelatorios();
@@ -1255,6 +1255,7 @@ const App = (() => {
     const el=document.getElementById('rel-content');
     el.innerHTML='<div class="spinner"></div>';
     if(state.relTab==='mensal') await renderRelMensal(el);
+    else if(state.relTab==='cartoes') await renderLimiteCartoes(el);
     else if(state.relTab==='parcelamentos') await renderParcelamentos(el);
     else await renderRelEvolucao(el);
   }
@@ -1441,13 +1442,10 @@ const App = (() => {
 
   async function renderLimiteCartoes(parentEl) {
     const allLancs = await DB.getAllLancamentos();
-    const hoje = todayStr();
+    const mesAtualKey = mesAnoStr(new Date().getMonth(), new Date().getFullYear());
 
     const rows = await Promise.all(state.cartoes.map(async c => {
       let totalNaoPago = 0;
-
-      // Somar apenas faturas automáticas não pagas do mês atual em diante
-      const mesAtualKey = mesAnoStr(new Date().getMonth(), new Date().getFullYear());
       const faturas = allLancs.filter(l =>
         l.autoFatura && l.faturaCartaoId === c.id && !l.pago && mesAnoNum(l.mesAno) >= mesAnoNum(mesAtualKey)
       );
@@ -1472,14 +1470,20 @@ const App = (() => {
       </div>`;
     }));
 
-    const cardHtml = `<div class="card" style="padding:20px">
-      <div class="section-label" style="padding:0;margin-bottom:4px">Limite comprometido</div>
-      <div style="font-size:11px;color:var(--text3);margin-bottom:16px">Faturas com vencimento futuro ainda não pagas</div>
-      ${rows.join('')}
+    const cardHtml = `<div style="padding:16px 16px 0">
+      <div class="card" style="padding:20px">
+        <div class="section-label" style="padding:0;margin-bottom:4px">Limite comprometido</div>
+        <div style="font-size:11px;color:var(--text3);margin-bottom:16px">Faturas não pagas do mês atual em diante</div>
+        ${rows.join('')}
+      </div>
     </div>
-    <div style="height:8px"></div>`;
+    <div style="height:20px"></div>`;
 
-    parentEl.insertAdjacentHTML('beforeend', cardHtml);
+    if (parentEl.id === 'rel-content') {
+      parentEl.innerHTML = cardHtml;
+    } else {
+      parentEl.insertAdjacentHTML('beforeend', cardHtml);
+    }
   }
 
   function _setRelPeriodo(p){state.relPeriodo=p;renderRelatorios();}
