@@ -1185,7 +1185,7 @@ const App = (() => {
         // 3. Atualizar todos os lançamentos futuros deste template
         const allLancs = await DB.getAllLancamentos();
         const mesAtual = mesAno;
-        for (const l of allLancs.filter(l => l.templateId === obj.templateId && l.mesAno > mesAtual)) {
+        for (const l of allLancs.filter(l => l.templateId === obj.templateId && mesAnoNum(l.mesAno) > mesAnoNum(mesAtual))) {
           const updated = {...l,
             categoriaId: obj.categoriaId,
             subcat: obj.subcat,
@@ -1990,7 +1990,7 @@ const App = (() => {
       const mesPgtoKey = mesAnoStr(dPgto.getMonth(), dPgto.getFullYear());
 
       // Não criar em meses passados
-      if (mesPgtoKey < mesAtualKey) continue;
+      if (mesAnoNum(mesPgtoKey) < mesAnoNum(mesAtualKey)) continue;
 
       // Verificar se já existe um gasto fixo de fatura deste cartão nesse mês
       const existente = allLancs.find(l =>
