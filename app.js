@@ -1447,13 +1447,13 @@ const App = (() => {
             .forEach(l => _faturasPagas.add(l.faturaCartaoId + '|' + l.mesAno));
 
     const rows = await Promise.all(state.cartoes.map(async c => {
-      // Limite comprometido = soma das parcelas de crédito deste cartão a partir do mês atual
-      // (inclui fatura atual em aberto + próximas faturas)
+      // Limite comprometido = soma das faturas automáticas não pagas do mês atual em diante
       const parcelasEmAberto = allLancs.filter(l =>
-        l.tipo === 'credito' && l.cartaoId === c.id &&
+        l.autoFatura && l.faturaCartaoId === c.id &&
+        !l.pago &&
         l.mesAno >= mesAtualKey
       );
-      const totalComprometido = parcelasEmAberto.reduce((s, l) => s + (l.valorParcela || 0), 0);
+      const totalComprometido = parcelasEmAberto.reduce((s, l) => s + (l.valor || 0), 0);
 
       const pct = c.limite ? Math.min((totalComprometido / c.limite) * 100, 100) : 0;
       const disp = Math.max((c.limite || 0) - totalComprometido, 0);
