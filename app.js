@@ -1258,7 +1258,6 @@ const App = (() => {
     else if(state.relTab==='parcelamentos') await renderParcelamentos(el);
     else await renderRelEvolucao(el);
   }
-  }
 
   async function renderRelMensal(el){
     const lancs=state.lancamentos;
