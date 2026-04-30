@@ -1446,10 +1446,10 @@ const App = (() => {
     const rows = await Promise.all(state.cartoes.map(async c => {
       let totalNaoPago = 0;
 
-      // Usar APENAS os gastos fixos de fatura automática não pagos (tipo=fixo, autoFatura=true)
-      // Esses já consolidam o total de cada mês de fatura
+      // Somar apenas faturas automáticas não pagas do mês atual em diante
+      const mesAtualKey = mesAnoStr(new Date().getMonth(), new Date().getFullYear());
       const faturas = allLancs.filter(l =>
-        l.tipo === 'fixo' && l.autoFatura && l.faturaCartaoId === c.id && !l.pago
+        l.autoFatura && l.faturaCartaoId === c.id && !l.pago && l.mesAno >= mesAtualKey
       );
       faturas.forEach(l => totalNaoPago += (l.valor || 0));
 
