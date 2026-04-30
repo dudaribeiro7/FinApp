@@ -70,12 +70,7 @@ const App = (() => {
       const mesPgto = mesAnoStr(dPgto.getMonth(), dPgto.getFullYear());
       return _faturasPagas.has(cartao.id + '|' + mesPgto);
     }
-    // fallback: data de vencimento
-    const hoje = new Date();
-    hoje.setHours(23, 59, 59, 0);
-    const dVenc = dataVencFatura(mesAno, cartao);
-    if (!dVenc) return mesAnoLt(mesAno, mesAnoStr(hoje.getMonth(), hoje.getFullYear()));
-    return dVenc < hoje;
+    return false;
   }
   function todayStr() {
     const d = new Date();
