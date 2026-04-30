@@ -2431,7 +2431,8 @@ const App = (() => {
         const key = p.mesAno;
         const pago = isParcelaPaga(key, c.cartao);
         const isProx = !pago && key === c.proxima?.mesAno;
-        const mesLabel = MONTHS_SHORT[mm-1]+'/'+String(yy).slice(2);
+        const [mmStr2, yyStr2] = key.split('-').map(Number);
+        const mesLabel = MONTHS_SHORT[mmStr2-1]+'/'+String(yyStr2).slice(2);
         return `<div class="parc-detalhe-row">
           <span style="font-size:12px;color:${pago?'var(--text3)':isProx?cor:'var(--text2)'}">
             ${pago?'✓':isProx?'→':'·'} ${p.parcela}/${c.n} · ${mesLabel}${isProx?' <span style="font-size:9px;padding:1px 5px;border-radius:4px;background:'+cor+'22;color:'+cor+'">próxima</span>':''}

@@ -168,10 +168,10 @@ body{
 /* ── Parcelamentos ─────────────────── */
 .parc-resumo-card{
   background:var(--bg2);border:0.5px solid var(--border);border-radius:14px;
-  padding:12px 10px;display:flex;flex-direction:column;gap:4px;
+  padding:10px 8px;display:flex;flex-direction:column;gap:3px;min-width:0;
 }
-.parc-resumo-label{font-size:9px;color:var(--text3);letter-spacing:0.8px;text-transform:uppercase}
-.parc-resumo-val{font-size:14px;font-weight:600;font-family:'DM Mono',monospace}
+.parc-resumo-label{font-size:8.5px;color:var(--text3);letter-spacing:0.6px;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.parc-resumo-val{font-size:12px;font-weight:600;font-family:'DM Mono',monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .parc-chip-filtro{
   flex-shrink:0;display:flex;align-items:center;gap:6px;padding:6px 12px;
   border-radius:20px;border:0.5px solid var(--border2);background:var(--bg3);
@@ -869,7 +869,7 @@ select option{background:var(--bg3)}
 
   <div class="scroll-area" id="parc-scroll">
     <!-- Cards resumo -->
-    <div id="parc-resumo" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;padding:0 16px 16px"></div>
+    <div id="parc-resumo" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;padding:0 16px 16px"></div>
 
     <!-- Impacto mensal -->
     <div id="parc-impacto-wrap" style="padding:0 16px 16px">
