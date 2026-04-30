@@ -257,6 +257,7 @@ const App = (() => {
   async function loadData() {
     [state.categorias, state.cartoes] = await Promise.all([DB.getCategorias(), DB.getCartoes()]);
     await DB.ensureFixosMes(mesAnoStr(state.currentMonth, state.currentYear), mesAnoStr(new Date().getMonth(), new Date().getFullYear()));
+    for (const c of state.cartoes) await atualizarFaturaFixa(c.id);
     state.lancamentos = await DB.getLancamentos(mesAnoStr(state.currentMonth, state.currentYear));
   }
 
@@ -265,6 +266,7 @@ const App = (() => {
     if (state.currentMonth<0) { state.currentMonth=11; state.currentYear--; }
     if (state.currentMonth>11) { state.currentMonth=0; state.currentYear++; }
     await DB.ensureFixosMes(mesAnoStr(state.currentMonth, state.currentYear), mesAnoStr(new Date().getMonth(), new Date().getFullYear()));
+    for (const c of state.cartoes) await atualizarFaturaFixa(c.id);
     state.lancamentos = await DB.getLancamentos(mesAnoStr(state.currentMonth, state.currentYear));
     const label = `${MONTHS[state.currentMonth]} ${state.currentYear}`;
     ['home-month-label','lanc-month-label','rel-month-label'].forEach(id=>{const el=document.getElementById(id);if(el)el.textContent=label;});
