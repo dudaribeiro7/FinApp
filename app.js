@@ -236,7 +236,11 @@ const App = (() => {
     if (navMap[id]) document.getElementById(navMap[id])?.classList.add('active');
     if (id==='screen-home') renderHome();
     if (id==='screen-lancamentos') renderLancamentos();
-    if (id==='screen-relatorios') renderRelatorios();
+    if (id==='screen-relatorios') {
+      const el=document.getElementById('rel-month-label');
+      if(el) el.textContent=`${MONTHS[state.currentMonth]} ${state.currentYear}`;
+      renderRelatorios();
+    }
     if (id==='screen-perfil') renderPerfil();
     if (id==='screen-sheets') renderSheetsScreen();
     if (id==='screen-parcelamentos') renderParcelamentos();
@@ -263,7 +267,7 @@ const App = (() => {
     await DB.ensureFixosMes(mesAnoStr(state.currentMonth, state.currentYear), mesAnoStr(new Date().getMonth(), new Date().getFullYear()));
     state.lancamentos = await DB.getLancamentos(mesAnoStr(state.currentMonth, state.currentYear));
     const label = `${MONTHS[state.currentMonth]} ${state.currentYear}`;
-    ['home-month-label','lanc-month-label'].forEach(id=>{const el=document.getElementById(id);if(el)el.textContent=label;});
+    ['home-month-label','lanc-month-label','rel-month-label'].forEach(id=>{const el=document.getElementById(id);if(el)el.textContent=label;});
     if (state.currentScreen==='screen-home') renderHome();
     if (state.currentScreen==='screen-lancamentos') renderLancamentos();
     if (state.currentScreen==='screen-relatorios') renderRelatorios();
@@ -1242,6 +1246,8 @@ const App = (() => {
   function setRelTab(tab){
     state.relTab=tab;
     ['mensal','evolucao'].forEach(t=>document.getElementById('rt-'+t)?.classList.toggle('active',t===tab));
+    const nav=document.getElementById('rel-month-nav');
+    if(nav) nav.style.display=tab==='mensal'?'flex':'none';
     renderRelatorios();
   }
 
@@ -1306,13 +1312,6 @@ const App = (() => {
     }).filter(Boolean).sort((a,b)=>b.val-a.val);
 
     el.innerHTML=`
-      <div style="padding:0 20px 4px;display:flex;justify-content:space-between;align-items:center">
-        <div class="month-nav" style="padding:0;margin-bottom:0;flex:1">
-          <button class="month-btn" onclick="App.changeMonth(-1)">&#8249;</button>
-          <span style="font-size:15px;font-weight:600">${mesLabel}</span>
-          <button class="month-btn" onclick="App.changeMonth(1)">&#8250;</button>
-        </div>
-      </div>
       <div class="card" style="padding:20px">
         <div class="section-label" style="padding:0;margin-bottom:14px">Saídas por categoria</div>
         ${catItems.length===0?'<div style="text-align:center;color:var(--text3);font-size:13px;padding:16px 0">Nenhuma saída registrada</div>':

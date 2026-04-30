@@ -893,10 +893,14 @@ select option{background:var(--bg3)}
 
 <div class="screen" id="screen-relatorios">
   <div class="page-header">
-    <button class="back-btn" onclick="App.goBack()">
-      <svg viewBox="0 0 24 24"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
-    </button>
     <span class="page-title">Relatórios</span>
+    <div style="margin-left:auto;display:flex;gap:8px">
+      <div class="month-nav" style="padding:0;margin-bottom:0" id="rel-month-nav">
+        <button class="month-btn" onclick="App.changeMonth(-1)">&#8249;</button>
+        <span style="font-size:13px;font-weight:500;min-width:80px;text-align:center" id="rel-month-label">Abril 2026</span>
+        <button class="month-btn" onclick="App.changeMonth(1)">&#8250;</button>
+      </div>
+    </div>
   </div>
 
   <div class="seg-ctrl" style="flex-shrink:0">
