@@ -39,6 +39,32 @@ const App = (() => {
   function mesAnoLe(a, b) { return mesAnoNum(a) <= mesAnoNum(b); } // a <= b
   function mesAnoLt(a, b) { return mesAnoNum(a) < mesAnoNum(b); }  // a < b
   function mesAnoGt(a, b) { return mesAnoNum(a) > mesAnoNum(b); }  // a > b
+
+  // Retorna a data de vencimento da fatura do cartão para um dado mesAno de parcela.
+  // Ex: parcela "04-2026" do Nubank (fecha 4, vence 11) → vence 11/Mai/2026
+  function dataVencFatura(mesAno, cartao) {
+    if (!cartao) return null;
+    const [mm, yy] = mesAno.split('-').map(Number);
+    const m = mm - 1; // 0-based
+    const fechamento = cartao.fechamento || 5;
+    const vencimento = cartao.vencimento || 10;
+    // Se vencimento > fechamento → vence no mesmo mês da parcela
+    // Se vencimento <= fechamento → vence no mês seguinte
+    if (vencimento > fechamento) {
+      return new Date(yy, m, vencimento);
+    } else {
+      return new Date(yy, m + 1, vencimento);
+    }
+  }
+
+  // Uma parcela é considerada paga se a data de vencimento da fatura já passou
+  function isParcelaPaga(mesAno, cartao) {
+    const hoje = new Date();
+    hoje.setHours(23, 59, 59, 0);
+    const dVenc = dataVencFatura(mesAno, cartao);
+    if (!dVenc) return mesAnoLt(mesAno, mesAnoStr(hoje.getMonth(), hoje.getFullYear()));
+    return dVenc < hoje;
+  }
   function todayStr() {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
@@ -2268,17 +2294,12 @@ const App = (() => {
       const n = primeira.totalParcelas || parcelas.length;
       const totalCompra = primeira.valorTotal || (valorParcela * n);
 
-      const pagas = parcelas.filter(p => {
-        // Parcela só é "paga" se o mês dela é ANTERIOR ao mês atual (estritamente)
-        return mesAnoLt(p.mesAno, mesHojeKey);
-      }).length;
+      const pagas = parcelas.filter(p => isParcelaPaga(p.mesAno, cartao)).length;
       const restantes = n - pagas;
       const totalPago = pagas * valorParcela;
       const totalFalta = restantes * valorParcela;
 
-      const proxima = parcelas.find(p => {
-        return mesAnoGt(p.mesAno, mesHojeKey) || p.mesAno === mesHojeKey;
-      });
+      const proxima = parcelas.find(p => !isParcelaPaga(p.mesAno, cartao));
 
       const ultima = parcelas[parcelas.length - 1];
       const [ulMm, ulYy] = ultima.mesAno.split('-').map(Number);
@@ -2359,7 +2380,7 @@ const App = (() => {
       const impactoMap = {};
       abertas.forEach(c => c.parcelas.forEach(p => {
         const key = p.mesAno;
-        if (!mesAnoLt(key, mesHojeKey)) impactoMap[key] = (impactoMap[key]||0) + (p.valorParcela||0);
+        if (!isParcelaPaga(key, c.cartao)) impactoMap[key] = (impactoMap[key]||0) + (p.valorParcela||0);
       }));
       const meses = Object.keys(impactoMap).sort((a,b) => mesAnoNum(a) - mesAnoNum(b)).slice(0,12);
       const maxVal = Math.max(...meses.map(k=>impactoMap[k]), 1);
@@ -2408,7 +2429,7 @@ const App = (() => {
 
       const detalheRows = c.parcelas.map(p => {
         const key = p.mesAno;
-        const pago = mesAnoLt(key, mesHojeKey);
+        const pago = isParcelaPaga(key, c.cartao);
         const isProx = !pago && key === c.proxima?.mesAno;
         const mesLabel = MONTHS_SHORT[mm-1]+'/'+String(yy).slice(2);
         return `<div class="parc-detalhe-row">
