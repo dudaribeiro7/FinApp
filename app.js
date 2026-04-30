@@ -1449,7 +1449,7 @@ const App = (() => {
       // Somar apenas faturas automáticas não pagas do mês atual em diante
       const mesAtualKey = mesAnoStr(new Date().getMonth(), new Date().getFullYear());
       const faturas = allLancs.filter(l =>
-        l.autoFatura && l.faturaCartaoId === c.id && !l.pago && l.mesAno >= mesAtualKey
+        l.autoFatura && l.faturaCartaoId === c.id && !l.pago && mesAnoNum(l.mesAno) >= mesAnoNum(mesAtualKey)
       );
       faturas.forEach(l => totalNaoPago += (l.valor || 0));
 
