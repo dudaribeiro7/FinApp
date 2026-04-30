@@ -57,13 +57,25 @@ const App = (() => {
     }
   }
 
-  // Uma parcela é considerada paga se a data de vencimento da fatura já passou
+  // Uma parcela é considerada paga se o lançamento de fatura do cartão
+  // referente ao mês de pagamento estiver com pago=true.
+  // _faturasPagas é um Set<"cartaoId|mesAnoPagamento"> montado em renderParcelamentos.
+  let _faturasPagas = null;
+
   function isParcelaPaga(mesAno, cartao) {
+    if (_faturasPagas && cartao) {
+      const dVenc = dataVencFatura(mesAno, cartao);
+      if (dVenc) {
+        const mesPgto = mesAnoStr(dVenc.getMonth(), dVenc.getFullYear());
+        return _faturasPagas.has(cartao.id + '|' + mesPgto);
+      }
+    }
+    // fallback: data de vencimento
     const hoje = new Date();
     hoje.setHours(23, 59, 59, 0);
-    const dVenc = dataVencFatura(mesAno, cartao);
-    if (!dVenc) return mesAnoLt(mesAno, mesAnoStr(hoje.getMonth(), hoje.getFullYear()));
-    return dVenc < hoje;
+    const dVenc2 = dataVencFatura(mesAno, cartao);
+    if (!dVenc2) return mesAnoLt(mesAno, mesAnoStr(hoje.getMonth(), hoje.getFullYear()));
+    return dVenc2 < hoje;
   }
   function todayStr() {
     const d = new Date();
@@ -2274,6 +2286,11 @@ const App = (() => {
   async function renderParcelamentos() {
     const todos = await DB.getAllLancamentos();
     const creditos = todos.filter(l => l.tipo === 'credito' && l.totalParcelas > 1 && l.grupoId);
+
+    // Montar set de faturas pagas: chave = "cartaoId|mesAnoPagamento"
+    _faturasPagas = new Set();
+    todos.filter(l => l.autoFatura && l.faturaCartaoId && l.pago && l.mesAno)
+         .forEach(l => _faturasPagas.add(l.faturaCartaoId + '|' + l.mesAno));
 
     // Agrupar por grupoId
     const grupos = {};
