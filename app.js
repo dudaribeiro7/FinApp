@@ -31,6 +31,14 @@ const App = (() => {
 
   /* ── Utilitários ─────────────────────── */
   function mesAnoStr(m, y) { return `${String(m+1).padStart(2,'0')}-${y}`; }
+  // Converte "MM-YYYY" para número comparável (ex: "04-2026" → 202604)
+  function mesAnoNum(key) {
+    const [mm, yy] = key.split('-').map(Number);
+    return yy * 100 + mm;
+  }
+  function mesAnoLe(a, b) { return mesAnoNum(a) <= mesAnoNum(b); } // a <= b
+  function mesAnoLt(a, b) { return mesAnoNum(a) < mesAnoNum(b); }  // a < b
+  function mesAnoGt(a, b) { return mesAnoNum(a) > mesAnoNum(b); }  // a > b
   function todayStr() {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
@@ -2261,16 +2269,15 @@ const App = (() => {
       const totalCompra = primeira.valorTotal || (valorParcela * n);
 
       const pagas = parcelas.filter(p => {
-        const [mm, yy] = p.mesAno.split('-').map(Number);
-        return mesAnoStr(mm-1, yy) <= mesHojeKey;
+        // Parcela só é "paga" se o mês dela é ANTERIOR ao mês atual (estritamente)
+        return mesAnoLt(p.mesAno, mesHojeKey);
       }).length;
       const restantes = n - pagas;
       const totalPago = pagas * valorParcela;
       const totalFalta = restantes * valorParcela;
 
       const proxima = parcelas.find(p => {
-        const [mm, yy] = p.mesAno.split('-').map(Number);
-        return mesAnoStr(mm-1, yy) > mesHojeKey;
+        return mesAnoGt(p.mesAno, mesHojeKey) || p.mesAno === mesHojeKey;
       });
 
       const ultima = parcelas[parcelas.length - 1];
@@ -2351,11 +2358,10 @@ const App = (() => {
     if (state.parcImpactoVisible) {
       const impactoMap = {};
       abertas.forEach(c => c.parcelas.forEach(p => {
-        const [mm, yy] = p.mesAno.split('-').map(Number);
-        const key = mesAnoStr(mm-1, yy);
-        if (key >= mesHojeKey) impactoMap[key] = (impactoMap[key]||0) + (p.valorParcela||0);
+        const key = p.mesAno;
+        if (!mesAnoLt(key, mesHojeKey)) impactoMap[key] = (impactoMap[key]||0) + (p.valorParcela||0);
       }));
-      const meses = Object.keys(impactoMap).sort().slice(0,12);
+      const meses = Object.keys(impactoMap).sort((a,b) => mesAnoNum(a) - mesAnoNum(b)).slice(0,12);
       const maxVal = Math.max(...meses.map(k=>impactoMap[k]), 1);
       impactoEl.innerHTML = meses.length ? meses.map(k => {
         const [mmStr, yyStr] = k.split('-');
@@ -2401,10 +2407,9 @@ const App = (() => {
       }
 
       const detalheRows = c.parcelas.map(p => {
-        const [mm, yy] = p.mesAno.split('-').map(Number);
-        const key = mesAnoStr(mm-1, yy);
-        const pago = key <= mesHojeKey;
-        const isProx = !pago && p.mesAno === c.proxima?.mesAno;
+        const key = p.mesAno;
+        const pago = mesAnoLt(key, mesHojeKey);
+        const isProx = !pago && key === c.proxima?.mesAno;
         const mesLabel = MONTHS_SHORT[mm-1]+'/'+String(yy).slice(2);
         return `<div class="parc-detalhe-row">
           <span style="font-size:12px;color:${pago?'var(--text3)':isProx?cor:'var(--text2)'}">
