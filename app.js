@@ -1437,10 +1437,10 @@ const App = (() => {
     setTimeout(()=>{ drawLineChart(dados); drawSaldoChart(dados); },100);
 
     // Card de limite acumulado (faturas com vencimento futuro)
-    await renderLimiteCartoes(el);
+    await renderLimiteCartoes(el, true);
   }
 
-  async function renderLimiteCartoes(parentEl) {
+  async function renderLimiteCartoes(parentEl, append=false) {
     const allLancs = await DB.getAllLancamentos();
     const mesAtualKey = mesAnoStr(new Date().getMonth(), new Date().getFullYear());
 
@@ -1479,10 +1479,10 @@ const App = (() => {
     </div>
     <div style="height:20px"></div>`;
 
-    if (parentEl.id === 'rel-content') {
-      parentEl.innerHTML = cardHtml;
-    } else {
+    if (append) {
       parentEl.insertAdjacentHTML('beforeend', cardHtml);
+    } else {
+      parentEl.innerHTML = cardHtml;
     }
   }
 
