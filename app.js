@@ -1451,7 +1451,7 @@ const App = (() => {
       const parcelasEmAberto = allLancs.filter(l =>
         l.autoFatura && l.faturaCartaoId === c.id &&
         !l.pago &&
-        l.mesAno >= mesAtualKey
+        mesAnoNum(l.mesAno) >= mesAnoNum(mesAtualKey)
       );
       const totalComprometido = parcelasEmAberto.reduce((s, l) => s + (l.valor || 0), 0);
 
