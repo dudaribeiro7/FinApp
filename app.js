@@ -1441,21 +1441,26 @@ const App = (() => {
     const allLancs = await DB.getAllLancamentos();
     const mesAtualKey = mesAnoStr(new Date().getMonth(), new Date().getFullYear());
 
-    const rows = await Promise.all(state.cartoes.map(async c => {
-      let totalNaoPago = 0;
-      const faturas = allLancs.filter(l =>
-        l.autoFatura && l.faturaCartaoId === c.id && !l.pago && mesAnoNum(l.mesAno) >= mesAnoNum(mesAtualKey)
-      );
-      faturas.forEach(l => totalNaoPago += (l.valor || 0));
+    // _faturasPagas precisa estar atualizado
+    _faturasPagas = new Set();
+    allLancs.filter(l => l.autoFatura && l.faturaCartaoId && l.pago && l.mesAno)
+            .forEach(l => _faturasPagas.add(l.faturaCartaoId + '|' + l.mesAno));
 
-      const pct = c.limite ? Math.min((totalNaoPago / c.limite) * 100, 100) : 0;
-      const disp = Math.max((c.limite || 0) - totalNaoPago, 0);
+    const rows = await Promise.all(state.cartoes.map(async c => {
+      // Limite comprometido = soma das parcelas de crédito deste cartão ainda não pagas
+      const parcelasEmAberto = allLancs.filter(l =>
+        l.tipo === 'credito' && l.cartaoId === c.id && !isParcelaPaga(l.mesAno, c)
+      );
+      const totalComprometido = parcelasEmAberto.reduce((s, l) => s + (l.valorParcela || 0), 0);
+
+      const pct = c.limite ? Math.min((totalComprometido / c.limite) * 100, 100) : 0;
+      const disp = Math.max((c.limite || 0) - totalComprometido, 0);
       const iconHtml = getBancoIconHtml(c.nome, 28);
       return `<div style="margin-bottom:16px">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
           ${iconHtml || `<div style="width:28px;height:28px;border-radius:7px;background:${c.cor}22;display:flex;align-items:center;justify-content:center;font-size:13px">💳</div>`}
           <span style="font-size:15px;font-weight:600;color:${c.cor}">${c.nome}</span>
-          <span style="margin-left:auto;font-size:13px;font-family:'DM Mono',monospace;color:var(--text2)">${fmtMoney(totalNaoPago)} <span style="color:var(--text3)">/ ${fmtMoney(c.limite||0)}</span></span>
+          <span style="margin-left:auto;font-size:13px;font-family:'DM Mono',monospace;color:var(--text2)">${fmtMoney(totalComprometido)} <span style="color:var(--text3)">/ ${fmtMoney(c.limite||0)}</span></span>
         </div>
         <div style="height:10px;background:var(--bg4);border-radius:5px;overflow:hidden;margin-bottom:6px">
           <div style="height:100%;width:${pct}%;background:${c.cor};border-radius:5px"></div>
@@ -1470,7 +1475,7 @@ const App = (() => {
     const cardHtml = `<div style="padding:16px 16px 0">
       <div class="card" style="padding:20px">
         <div class="section-label" style="padding:0;margin-bottom:4px">Limite comprometido</div>
-        <div style="font-size:11px;color:var(--text3);margin-bottom:16px">Faturas não pagas do mês atual em diante</div>
+        <div style="font-size:11px;color:var(--text3);margin-bottom:16px">Total de parcelas em aberto vs. limite do cartão</div>
         ${rows.join('')}
       </div>
     </div>
