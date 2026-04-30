@@ -1435,9 +1435,6 @@ const App = (() => {
       <div style="height:8px"></div>`;
 
     setTimeout(()=>{ drawLineChart(dados); drawSaldoChart(dados); },100);
-
-    // Card de limite acumulado (faturas com vencimento futuro)
-    await renderLimiteCartoes(el, true);
   }
 
   async function renderLimiteCartoes(parentEl, append=false) {
