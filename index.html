@@ -17,13 +17,13 @@
 ═══════════════════════════════════════ */
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 :root{
-  --bg:#1c1c1e;
-  --bg2:#252528;
-  --bg3:#2f2f32;
-  --bg4:#3a3a3e;
-  --border:#ffffff18;
-  --border2:#ffffff28;
-  --border3:#ffffff40;
+  --bg:#28282c;
+  --bg2:#323236;
+  --bg3:#3c3c40;
+  --bg4:#46464b;
+  --border:#ffffff1c;
+  --border2:#ffffff2a;
+  --border3:#ffffff42;
   --text:#f0f0f0;
   --text2:#9999aa;
   --text3:#636370;
@@ -73,8 +73,11 @@ body.light-mode{
   --accent2:#7c6af7;
   --accent-dim:#6d5ef518;
 }
-html, body{
+html{
   height:100%;
+  background:#28282c;
+}
+html, body{
   background:var(--bg);
 }
 body.light-mode{background:#f0f2f5}
@@ -83,6 +86,10 @@ body{
   color:var(--text);
   max-width:430px;
   margin:0 auto;
+  min-height:100vh;
+  min-height:100dvh;
+  display:flex;
+  flex-direction:column;
 }
 
 /* ═══════════════════════════════════════
@@ -91,7 +98,9 @@ body{
 #app{
   display:flex;
   flex-direction:column;
-  min-height:100%;
+  flex:1;
+  min-height:100vh;
+  min-height:100dvh;
   background:var(--bg);
 }
 .screen{
