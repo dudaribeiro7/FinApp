@@ -1245,7 +1245,7 @@ const App = (() => {
   ══════════════════════════════════════ */
   function setRelTab(tab){
     state.relTab=tab;
-    ['mensal','evolucao'].forEach(t=>document.getElementById('rt-'+t)?.classList.toggle('active',t===tab));
+    ['mensal','evolucao','parcelamentos'].forEach(t=>document.getElementById('rt-'+t)?.classList.toggle('active',t===tab));
     const nav=document.getElementById('rel-month-nav');
     if(nav) nav.style.display=tab==='mensal'?'flex':'none';
     renderRelatorios();
@@ -1255,7 +1255,9 @@ const App = (() => {
     const el=document.getElementById('rel-content');
     el.innerHTML='<div class="spinner"></div>';
     if(state.relTab==='mensal') await renderRelMensal(el);
+    else if(state.relTab==='parcelamentos') await renderParcelamentos(el);
     else await renderRelEvolucao(el);
+  }
   }
 
   async function renderRelMensal(el){
@@ -2282,7 +2284,7 @@ const App = (() => {
   /* ══════════════════════════════════════
      PARCELAMENTOS
   ══════════════════════════════════════ */
-  async function renderParcelamentos() {
+  async function renderParcelamentos(externalEl) {
     const todos = await DB.getAllLancamentos();
     const creditos = todos.filter(l => l.tipo === 'credito' && l.totalParcelas > 1 && l.grupoId);
 
@@ -2346,10 +2348,9 @@ const App = (() => {
     const concluidas = comprasFiltradas.filter(c => c.concluida);
 
     // ── Chips cartão ─────────────────────
-    const cartaoChipsEl = document.getElementById('parc-chips-cartao');
     const cartoesComParc = [...new Set(compras.map(c=>c.cartaoId))]
       .map(id => state.cartoes.find(c=>c.id===id)).filter(Boolean);
-    cartaoChipsEl.innerHTML = [
+    const chipsCartaoHtml = [
       `<div class="parc-chip-filtro ${!filtCartao?'ativo':''}" onclick="App._parcFiltroCartao(null)">Todos</div>`,
       ...cartoesComParc.map(c => {
         const icon = getBancoIconHtml(c.nome, 16);
@@ -2362,10 +2363,9 @@ const App = (() => {
     ].join('');
 
     // ── Chips categoria ──────────────────
-    const catChipsEl = document.getElementById('parc-chips-cat');
     const catsComParc = [...new Set(compras.map(c=>c.categoriaId))]
       .map(id => state.categorias.find(c=>c.id===id)).filter(Boolean);
-    catChipsEl.innerHTML = [
+    const chipsCatHtml = [
       `<div class="parc-chip-filtro ${!filtCat?'ativo':''}" onclick="App._parcFiltroCat(null)">Todas cats</div>`,
       ...catsComParc.map(c => {
         const ativo = filtCat === c.id;
@@ -2379,7 +2379,7 @@ const App = (() => {
     const totalComprometido = abertas.reduce((s,c)=>s+c.totalCompra,0);
     const totalPagoGeral = abertas.reduce((s,c)=>s+c.totalPago,0);
     const totalFaltaGeral = abertas.reduce((s,c)=>s+c.totalFalta,0);
-    document.getElementById('parc-resumo').innerHTML = [
+    const resumoHtml = [
       {label:'Comprometido', val:totalComprometido, cor:'var(--text)'},
       {label:'Já pago',      val:totalPagoGeral,    cor:'var(--green)'},
       {label:'Ainda falta',  val:totalFaltaGeral,   cor:'var(--red)'},
@@ -2390,8 +2390,8 @@ const App = (() => {
       </div>`).join('');
 
     // ── Impacto mensal ───────────────────
-    const impactoEl = document.getElementById('parc-impacto');
-    document.getElementById('parc-toggle-impacto').textContent = state.parcImpactoVisible ? 'ocultar' : 'mostrar';
+    const toggleLabel = state.parcImpactoVisible ? 'ocultar' : 'mostrar';
+    let impactoHtml = '';
     if (state.parcImpactoVisible) {
       const impactoMap = {};
       abertas.forEach(c => c.parcelas.forEach(p => {
@@ -2400,7 +2400,7 @@ const App = (() => {
       }));
       const meses = Object.keys(impactoMap).sort((a,b) => mesAnoNum(a) - mesAnoNum(b)).slice(0,12);
       const maxVal = Math.max(...meses.map(k=>impactoMap[k]), 1);
-      impactoEl.innerHTML = meses.length ? meses.map(k => {
+      impactoHtml = meses.length ? meses.map(k => {
         const [mmStr, yyStr] = k.split('-');
         const label = MONTHS_SHORT[parseInt(mmStr)-1]+'/'+yyStr.slice(2);
         const pct = Math.round((impactoMap[k]/maxVal)*100);
@@ -2410,14 +2410,9 @@ const App = (() => {
           <div class="parc-impacto-val">${fmtMoney(impactoMap[k])}</div>
         </div>`;
       }).join('') : `<div style="text-align:center;color:var(--text3);font-size:13px;padding:8px 0">Sem parcelas futuras</div>`;
-    } else {
-      impactoEl.innerHTML = '';
     }
 
-    // ── Lista ────────────────────────────
-    const listaEl = document.getElementById('parc-lista');
-    document.getElementById('parc-lista-label').textContent = `Compras em aberto (${abertas.length})`;
-
+    // ── Items da lista ───────────────────
     function renderItem(c, isConcluida) {
       const cor = c.cartao?.cor || 'var(--accent)';
       const iconCartao = c.cartao ? (getBancoIconHtml(c.cartao.nome, 16)||'') : '';
@@ -2453,7 +2448,7 @@ const App = (() => {
           <span style="font-size:12px;color:${pago?'var(--text3)':isProx?cor:'var(--text2)'}">
             ${pago?'✓':isProx?'→':'·'} ${p.parcela}/${c.n} · ${mesLabel}${isProx?' <span style="font-size:9px;padding:1px 5px;border-radius:4px;background:'+cor+'22;color:'+cor+'">próxima</span>':''}
           </span>
-          <span style="font-size:12px;font-family:\'DM Mono\',monospace;color:${pago?'var(--text3)':isProx?cor:'var(--text2)'}${pago?';text-decoration:line-through':''}">
+          <span style="font-size:12px;font-family:'DM Mono',monospace;color:${pago?'var(--text3)':isProx?cor:'var(--text2)'}${pago?';text-decoration:line-through':''}">
             ${fmtMoney(p.valorParcela||0)}
           </span>
         </div>`;
@@ -2467,7 +2462,7 @@ const App = (() => {
             <div class="parc-item-cartao">${iconCartao}<span>${c.cartao?.nome||'Cartão'} · termina ${mesFim}</span></div>
           </div>
           <div style="text-align:right;flex-shrink:0">
-            <div style="font-size:13px;font-weight:600;font-family:\'DM Mono\',monospace;color:${cor}">${fmtMoney(c.valorParcela)}<span style="font-size:10px;color:var(--text3);font-weight:400">/mês</span></div>
+            <div style="font-size:13px;font-weight:600;font-family:'DM Mono',monospace;color:${cor}">${fmtMoney(c.valorParcela)}<span style="font-size:10px;color:var(--text3);font-weight:400">/mês</span></div>
             <div style="font-size:10px;color:var(--text3)">${c.pagas}/${c.n} pagas</div>
           </div>
         </div>
@@ -2484,7 +2479,7 @@ const App = (() => {
             ${detalheRows}
             <div style="display:flex;justify-content:space-between;padding-top:8px;margin-top:4px;border-top:0.5px solid var(--border)">
               <span style="font-size:11px;color:var(--text3)">Total pago</span>
-              <span style="font-size:11px;font-family:\'DM Mono\',monospace;color:var(--green)">${fmtMoney(c.totalPago)}</span>
+              <span style="font-size:11px;font-family:'DM Mono',monospace;color:var(--green)">${fmtMoney(c.totalPago)}</span>
             </div>
           </div>
         </div>
@@ -2492,27 +2487,57 @@ const App = (() => {
       </div>`;
     }
 
-    let html = abertas.map(c=>renderItem(c,false)).join('');
+    let listaHtml = abertas.map(c=>renderItem(c,false)).join('');
     if (concluidas.length) {
-      html += `<div style="margin:16px 0 10px;font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--text3)">Concluídas (${concluidas.length})</div>`;
-      html += concluidas.map(c=>renderItem(c,true)).join('');
+      listaHtml += `<div style="margin:16px 0 10px;font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--text3)">Concluídas (${concluidas.length})</div>`;
+      listaHtml += concluidas.map(c=>renderItem(c,true)).join('');
     }
-    if (!html) html = `<div style="text-align:center;padding:40px 0;color:var(--text3)">
+    if (!listaHtml) listaHtml = `<div style="text-align:center;padding:40px 0;color:var(--text3)">
       <div style="font-size:40px;margin-bottom:12px">🎉</div>
       <div style="font-size:14px">Nenhum parcelamento encontrado</div>
     </div>`;
 
-    listaEl.innerHTML = html;
+    // ── Montar HTML completo e injetar ───
+    const fullHtml = `
+      <div style="padding:0 16px 8px;display:flex;gap:8px;overflow-x:auto;scrollbar-width:none">${chipsCartaoHtml}</div>
+      <div style="padding:0 16px 12px;display:flex;gap:8px;overflow-x:auto;scrollbar-width:none">${chipsCatHtml}</div>
+      <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;padding:0 16px 16px">${resumoHtml}</div>
+      <div style="padding:0 16px 16px">
+        <div class="section-label" style="margin-bottom:10px;display:flex;justify-content:space-between;align-items:center">
+          <span>Impacto mensal futuro</span>
+          <span id="parc-toggle-impacto" style="font-size:11px;color:var(--accent2);cursor:pointer" onclick="App._parcToggleImpacto()">${toggleLabel}</span>
+        </div>
+        <div id="parc-impacto">${impactoHtml}</div>
+      </div>
+      <div class="divider-line" style="margin:0 0 12px"></div>
+      <div style="padding:0 16px">
+        <div class="section-label" style="margin-bottom:10px" id="parc-lista-label">Compras em aberto (${abertas.length})</div>
+        <div id="parc-lista">${listaHtml}</div>
+      </div>
+      <div style="height:20px"></div>`;
+
+    if (externalEl) {
+      externalEl.innerHTML = fullHtml;
+    } else {
+      document.getElementById('parc-scroll').innerHTML = fullHtml;
+    }
   }
 
-  function _parcFiltroCartao(id) { state.parcFiltroCartao = id; renderParcelamentos(); }
-  function _parcFiltroCat(id)    { state.parcFiltroCat = id;    renderParcelamentos(); }
+  function _reRenderParc() {
+    if (state.relTab === 'parcelamentos' && state.currentScreen === 'screen-relatorios') {
+      renderParcelamentos(document.getElementById('rel-content'));
+    } else {
+      renderParcelamentos();
+    }
+  }
+  function _parcFiltroCartao(id) { state.parcFiltroCartao = id; _reRenderParc(); }
+  function _parcFiltroCat(id)    { state.parcFiltroCat = id;    _reRenderParc(); }
   function _parcToggleItem(grupoId) {
     if (state.parcAbertos.has(grupoId)) state.parcAbertos.delete(grupoId);
     else state.parcAbertos.add(grupoId);
-    renderParcelamentos();
+    _reRenderParc();
   }
-  function _parcToggleImpacto() { state.parcImpactoVisible = !state.parcImpactoVisible; renderParcelamentos(); }
+  function _parcToggleImpacto() { state.parcImpactoVisible = !state.parcImpactoVisible; _reRenderParc(); }
 
   return {
     gotoScreen,goBack,novoLancamento,changeMonth,

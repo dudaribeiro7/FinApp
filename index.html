@@ -772,7 +772,7 @@ select option{background:var(--bg3)}
     <!-- cartões -->
     <div class="section-label" style="display:flex;justify-content:space-between;align-items:center;padding-right:20px">
       <span>Cartões de crédito</span>
-      <span style="font-size:11px;color:var(--accent2);cursor:pointer" onclick="App.gotoScreen('screen-parcelamentos')">Ver parcelamentos</span>
+      <span style="font-size:11px;color:var(--accent2);cursor:pointer" onclick="App.setRelTab('parcelamentos');App.gotoScreen('screen-relatorios')">Ver parcelamentos</span>
     </div>
     <div class="cartao-chips" id="h-cartoes"></div>
 
@@ -858,37 +858,7 @@ select option{background:var(--bg3)}
     </button>
     <span class="page-title">Parcelamentos</span>
   </div>
-
-  <!-- Filtros sticky -->
-  <div id="parc-filtros" style="flex-shrink:0;padding:0 16px 12px">
-    <!-- Chips cartão -->
-    <div id="parc-chips-cartao" style="display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding-bottom:8px"></div>
-    <!-- Chips categoria -->
-    <div id="parc-chips-cat" style="display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px"></div>
-  </div>
-
-  <div class="scroll-area" id="parc-scroll">
-    <!-- Cards resumo -->
-    <div id="parc-resumo" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;padding:0 16px 16px"></div>
-
-    <!-- Impacto mensal -->
-    <div id="parc-impacto-wrap" style="padding:0 16px 16px">
-      <div class="section-label" style="margin-bottom:10px;display:flex;justify-content:space-between;align-items:center">
-        <span>Impacto mensal futuro</span>
-        <span id="parc-toggle-impacto" style="font-size:11px;color:var(--accent2);cursor:pointer" onclick="App._parcToggleImpacto()">ocultar</span>
-      </div>
-      <div id="parc-impacto"></div>
-    </div>
-
-    <div class="divider-line" style="margin:0 0 12px"></div>
-
-    <!-- Lista de parcelamentos -->
-    <div style="padding:0 16px">
-      <div class="section-label" style="margin-bottom:10px" id="parc-lista-label">Compras parceladas</div>
-      <div id="parc-lista"></div>
-    </div>
-    <div style="height:20px"></div>
-  </div>
+  <div class="scroll-area" id="parc-scroll"></div>
 </div>
 
 <div class="screen" id="screen-relatorios">
@@ -906,6 +876,7 @@ select option{background:var(--bg3)}
   <div class="seg-ctrl" style="flex-shrink:0">
     <button class="seg-btn active" onclick="App.setRelTab('mensal')" id="rt-mensal">Mensal</button>
     <button class="seg-btn" onclick="App.setRelTab('evolucao')" id="rt-evolucao">Evolução</button>
+    <button class="seg-btn" onclick="App.setRelTab('parcelamentos')" id="rt-parcelamentos">Parcelas</button>
   </div>
 
   <div class="scroll-area" id="rel-scroll">
