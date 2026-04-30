@@ -73,11 +73,8 @@ body.light-mode{
   --accent2:#7c6af7;
   --accent-dim:#6d5ef518;
 }
-html{
-  height:100%;
-  background:#28282c;
-}
 html, body{
+  height:100%;
   background:var(--bg);
 }
 body.light-mode{background:#f0f2f5}
@@ -86,10 +83,6 @@ body{
   color:var(--text);
   max-width:430px;
   margin:0 auto;
-  min-height:100vh;
-  min-height:100dvh;
-  display:flex;
-  flex-direction:column;
 }
 
 /* ═══════════════════════════════════════
@@ -98,16 +91,14 @@ body{
 #app{
   display:flex;
   flex-direction:column;
-  flex:1;
-  min-height:100vh;
-  min-height:100dvh;
+  min-height:100%;
   background:var(--bg);
 }
 .screen{
   display:none;
   flex-direction:column;
 }
-.screen.active{display:flex}
+.screen.active{display:flex;min-height:100vh;min-height:100dvh}
 
 .scroll-area{
   flex:1;
