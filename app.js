@@ -2321,12 +2321,15 @@ const App = (() => {
       const n = primeira.totalParcelas || parcelas.length;
       const totalCompra = primeira.valorTotal || (valorParcela * n);
 
-      const pagas = parcelas.filter(p => isParcelaPaga(p.mesAno, cartao)).length;
+      const isEffetivamentePaga = (p) =>
+        isParcelaPaga(p.mesAno, cartao) || mesAnoNum(p.mesAno) < mesAnoNum(mesHojeKey);
+
+      const pagas = parcelas.filter(p => isEffetivamentePaga(p)).length;
       const restantes = n - pagas;
       const totalPago = pagas * valorParcela;
       const totalFalta = restantes * valorParcela;
 
-      const proxima = parcelas.find(p => !isParcelaPaga(p.mesAno, cartao));
+      const proxima = parcelas.find(p => !isEffetivamentePaga(p));
 
       const ultima = parcelas[parcelas.length - 1];
       const [ulMm, ulYy] = ultima.mesAno.split('-').map(Number);
@@ -2450,7 +2453,7 @@ const App = (() => {
 
       const detalheRows = c.parcelas.map(p => {
         const key = p.mesAno;
-        const pago = isParcelaPaga(key, c.cartao);
+        const pago = isParcelaPaga(key, c.cartao) || mesAnoNum(key) < mesAnoNum(mesHojeKey);
         const isProx = !pago && key === c.proxima?.mesAno;
         const [mmStr2, yyStr2] = key.split('-').map(Number);
         const mesLabel = MONTHS_SHORT[mmStr2-1]+'/'+String(yyStr2).slice(2);
