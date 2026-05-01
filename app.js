@@ -2405,6 +2405,7 @@ const App = (() => {
       const impactoMap = {};
       abertas.forEach(c => c.parcelas.forEach(p => {
         const key = p.mesAno;
+        if (mesAnoNum(key) < mesAnoNum(mesHojeKey)) return;
         if (!isParcelaPaga(key, c.cartao)) impactoMap[key] = (impactoMap[key]||0) + (p.valorParcela||0);
       }));
       const meses = Object.keys(impactoMap).sort((a,b) => mesAnoNum(a) - mesAnoNum(b)).slice(0,12);
