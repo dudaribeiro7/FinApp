@@ -1642,6 +1642,7 @@ const App = (() => {
 
   /* ── Bottom Sheet: Detalhe do Cartão ── */
   let _cartaoBSPeriodo = 6; // meses padrão
+  let _cartaoBSFaturaSel = null; // fatura selecionada no bottom sheet (mesAnoV); null = fatura atual
 
   function _closeCartaoBS(e) {
     if (e && e.target !== document.getElementById('cartao-bs-overlay')) return;
@@ -1654,6 +1655,7 @@ const App = (() => {
     const body    = document.getElementById('cartao-bs-body');
     const c = getCartaoById(cartaoId);
     if (!c) return;
+    _cartaoBSFaturaSel = null; // sempre começa na fatura atual
 
     // Header
     const iconHtml = getBancoIconHtml(c.nome, 32);
@@ -1681,9 +1683,12 @@ const App = (() => {
 
     // ── Calcular fatura ATUAL pela regra oficial ──
     // Fatura atual = aquela cujo período (diaF/mesV-1 a diaF-1/mesV) inclui hoje
-    const { mesAnoV: mesAnoFatKey } = faturaAtual(c);
+    const { mesAnoV: mesAnoFatAtual } = faturaAtual(c);
+    // Fatura SELECIONADA: por padrão a atual; pode ser sobrescrita pelo clique no gráfico
+    const mesAnoFatKey = _cartaoBSFaturaSel || mesAnoFatAtual;
     const { dInicio, dFim, dVenc } = periodoFatura(mesAnoFatKey, c);
     const dFech = dFim; // "fechamento" exibido = último dia do período
+    const isFaturaAtual = mesAnoFatKey === mesAnoFatAtual;
 
     // ── 1. Fatura atual ──
     _faturasPagas = new Set();
@@ -1714,39 +1719,81 @@ const App = (() => {
     const labelMesFatura = `${MONTHS_PT[mmFat-1]} de ${yyFat}`;
 
     const statusColor = pago ? '#4ade80' : (valorFatura > 0 ? '#f59e0b' : '#6b7280');
-    const statusLabel = pago ? '✓ Paga' : (valorFatura > 0 ? '⏳ Aberta' : '– Sem lançamentos');
-    const statusBg    = pago ? '#4ade8020' : (valorFatura > 0 ? '#f59e0b20' : '#6b728020');
+    let statusLabel, statusBg;
+    if (pago) { statusLabel = '✓ Paga'; statusBg = '#4ade8020'; }
+    else if (!isFaturaAtual && mesAnoNum(mesAnoFatKey) > mesAnoNum(mesAnoFatAtual)) {
+      statusLabel = valorFatura > 0 ? '📅 Programada' : '– Sem lançamentos';
+      statusBg = valorFatura > 0 ? '#a78bfa20' : '#6b728020';
+    } else {
+      statusLabel = valorFatura > 0 ? '⏳ Aberta' : '– Sem lançamentos';
+      statusBg = valorFatura > 0 ? '#f59e0b20' : '#6b728020';
+    }
 
-    // ── 2. Histórico (gráfico) — baseado no mesAno do vencimento (nome da fatura) ──
+    // ── 2. Histórico (gráfico) ──
+    // Eixo X = faturas (mesAnoV). Sempre começa na fatura ATUAL e mostra:
+    //   • à esquerda: (_cartaoBSPeriodo - 1) faturas passadas
+    //   • à direita: todas as faturas FUTURAS que tenham parcelas cadastradas
+    // Isso permite ver compromissos futuros sem precisar configurar período.
     const meses = _cartaoBSPeriodo;
+    // Descobrir o mes mais distante no futuro com parcelas deste cartão
+    const futurosKeys = allLancs
+      .filter(l => !l.autoFatura && l.tipo === 'credito' && l.cartaoId === c.id)
+      .map(l => l.mesPagamento || l.mesAno)
+      .filter(k => k && mesAnoNum(k) > mesAnoNum(mesAnoFatAtual));
+    const maiorFuturo = futurosKeys.length
+      ? futurosKeys.reduce((a, b) => mesAnoNum(a) > mesAnoNum(b) ? a : b)
+      : mesAnoFatAtual;
+    const [mmAtu, yyAtu] = mesAnoFatAtual.split('-').map(Number);
+    const [mmMax, yyMax] = maiorFuturo.split('-').map(Number);
+    // Quantos meses no futuro a partir da fatura atual
+    const offsetFuturoMax = (yyMax - yyAtu) * 12 + (mmMax - mmAtu);
     const histDados = [];
+    // Primeiro as passadas + atual
     for (let i = meses - 1; i >= 0; i--) {
-      // Cada barra = uma fatura (pelo mês do vencimento)
-      const dVencRef = new Date(yyFat, (mmFat - 1) - i, 1);
-      const keyVenc = mesAnoStr(dVencRef.getMonth(), dVencRef.getFullYear());
-      // Valor = soma créditos cuja FATURA (mesPagamento) é esta
+      const dRef = new Date(yyAtu, (mmAtu - 1) - i, 1);
+      const keyVenc = mesAnoStr(dRef.getMonth(), dRef.getFullYear());
       let valorRef = 0;
       allLancs.filter(l => !l.autoFatura && l.tipo === 'credito' && l.cartaoId === c.id &&
                            (l.mesPagamento || l.mesAno) === keyVenc)
               .forEach(l => { valorRef += Math.abs(l.valorParcela || 0); });
       histDados.push({
-        label: dVencRef.toLocaleDateString('pt-BR',{month:'short'}).replace('.',''),
+        label: dRef.toLocaleDateString('pt-BR',{month:'short'}).replace('.',''),
         valor: valorRef,
         key: keyVenc,
-        isAtual: keyVenc === mesAnoFatKey,
+        isAtual: keyVenc === mesAnoFatAtual,
+        isFutura: false,
+      });
+    }
+    // Depois as futuras com parcelas
+    for (let i = 1; i <= offsetFuturoMax; i++) {
+      const dRef = new Date(yyAtu, (mmAtu - 1) + i, 1);
+      const keyVenc = mesAnoStr(dRef.getMonth(), dRef.getFullYear());
+      let valorRef = 0;
+      allLancs.filter(l => !l.autoFatura && l.tipo === 'credito' && l.cartaoId === c.id &&
+                           (l.mesPagamento || l.mesAno) === keyVenc)
+              .forEach(l => { valorRef += Math.abs(l.valorParcela || 0); });
+      if (valorRef === 0) continue; // só mostra futuras se tiverem valor
+      histDados.push({
+        label: dRef.toLocaleDateString('pt-BR',{month:'short'}).replace('.',''),
+        valor: valorRef,
+        key: keyVenc,
+        isAtual: false,
+        isFutura: true,
       });
     }
     const maxVal = Math.max(...histDados.map(d=>d.valor), 1);
 
     const barsHtml = histDados.map(d => {
       const h = Math.max((d.valor / maxVal) * 66, d.valor > 0 ? 4 : 0);
+      const isSel = d.key === mesAnoFatKey;
+      const bg = isSel ? c.cor : (d.isAtual ? c.cor + 'aa' : c.cor + '55');
       return `<div class="cartao-bs-bar-wrap">
-        <div class="cartao-bs-bar${d.isAtual?' active':''}"
-          style="height:${h}px;background:${d.isAtual ? c.cor : c.cor+'66'}"
-          onclick="this.classList.toggle('active')">
+        <div class="cartao-bs-bar${isSel?' active':''}"
+          style="height:${h}px;background:${bg};cursor:pointer"
+          onclick="App._setCartaoBSFatura(${c.id},'${d.key}')">
           <div class="cartao-bs-bar-tip">${fmtMoney(d.valor)}</div>
         </div>
-        <div class="cartao-bs-bar-label">${d.label}</div>
+        <div class="cartao-bs-bar-label" style="${d.isFutura?'opacity:0.6;font-style:italic':''}">${d.label}</div>
       </div>`;
     }).join('');
 
@@ -1842,9 +1889,9 @@ const App = (() => {
         }).join('');
 
     body.innerHTML = `
-      <!-- Fatura atual -->
+      <!-- Fatura -->
       <div class="cartao-bs-section">
-        <div class="cartao-bs-section-title">Fatura atual</div>
+        <div class="cartao-bs-section-title">${isFaturaAtual ? 'Fatura atual' : 'Fatura selecionada'}</div>
         <div class="cartao-bs-fatura-card">
           <div>
             <div style="font-size:11px;color:var(--text3);margin-bottom:4px">${labelMesFatura}</div>
@@ -1894,6 +1941,27 @@ const App = (() => {
     _cartaoBSPeriodo = meses;
     const c = getCartaoById(cartaoId);
     if (c) await _renderCartaoBSBody(c);
+  }
+
+  async function _setCartaoBSFatura(cartaoId, mesAnoV) {
+    _cartaoBSFaturaSel = mesAnoV;
+    const c = getCartaoById(cartaoId);
+    if (c) {
+      await _renderCartaoBSBody(c);
+      // Scroll suave para a seção de transações
+      const body = document.getElementById('cartao-bs-body');
+      const transSec = body?.querySelector('.cartao-bs-section .cartao-bs-section-title');
+      // Procurar a seção de transações
+      const titles = body?.querySelectorAll('.cartao-bs-section-title');
+      if (titles) {
+        for (const t of titles) {
+          if (t.textContent.startsWith('Transações')) {
+            t.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            break;
+          }
+        }
+      }
+    }
   }
 
   function drawLineChart(dados){
@@ -2997,7 +3065,7 @@ const App = (() => {
     setCfgTab,_toggleCatRow,
     _openAddCat,_openEditCat,_deleteCategoria,_openAddSubcat,_openEditSubcat,_deleteSubcat,
     _openAddCartao,_editCartao,_deleteCartao,_updateCartao,
-    _openCartaoBS,_closeCartaoBS,_setCartaoBSPeriodo,
+    _openCartaoBS,_closeCartaoBS,_setCartaoBSPeriodo,_setCartaoBSFatura,
     _exportar,_importar,_limpar,_setTema,
     openModal,closeModal,_selColor,_onCustomColor,
     _saveCategoria,_saveSubcat,_saveCartao,
