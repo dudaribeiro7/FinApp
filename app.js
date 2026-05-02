@@ -74,7 +74,7 @@ const App = (() => {
     const hoje = new Date();
     hoje.setHours(23, 59, 59, 0);
     const dVenc = dataVencFatura(mesAno, cartao);
-    if (!dVenc) return mesAnoLt(mesAno, mesAnoStr(hoje.getMonth(), hoje.getFullYear()));
+    if (!dVenc) return false; // sem info suficiente, não assume pago
     return dVenc < hoje;
   }
   function todayStr() {
@@ -2323,7 +2323,7 @@ const App = (() => {
       const totalCompra = primeira.valorTotal || (valorParcela * n);
 
       const isEffetivamentePaga = (p) =>
-        isParcelaPaga(p.mesAno, cartao) || mesAnoNum(p.mesAno) < mesAnoNum(mesHojeKey);
+        isParcelaPaga(p.mesAno, cartao);
 
       const pagas = parcelas.filter(p => isEffetivamentePaga(p)).length;
       const restantes = n - pagas;
@@ -2459,7 +2459,7 @@ const App = (() => {
 
       const detalheRows = c.parcelas.map(p => {
         const key = p.mesAno;
-        const pago = isParcelaPaga(key, c.cartao) || mesAnoNum(key) < mesAnoNum(mesHojeKey);
+        const pago = isParcelaPaga(key, c.cartao);
         const isProx = !pago && key === c.proxima?.mesAno;
         const [mmStr2, yyStr2] = key.split('-').map(Number);
         const mesLabel = MONTHS_SHORT[mmStr2-1]+'/'+String(yyStr2).slice(2);
