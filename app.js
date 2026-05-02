@@ -413,13 +413,14 @@ const App = (() => {
       const mesAnoFat = mesAnoStr(dVencAtual.getMonth(), dVencAtual.getFullYear());
       // Nome: MêsV/anoVYY
       const nomeFat = MONTHS_SHORT[dVencAtual.getMonth()] + '/' + String(dVencAtual.getFullYear()).slice(2);
-      // Calcular valor da fatura = soma de créditos no mesAno dessa fatura
-      const lancsFat = allLancsHome.filter(l => l.mesAno === mesAnoFat && !l.autoFatura);
+      // Calcular valor da fatura = soma de créditos cujo mesPagamento (fatura) == mesAnoFat
       let valorFat = 0;
-      lancsFat.filter(l => l.tipo === 'credito' && l.cartaoId === c.id)
-              .forEach(l => { valorFat += Math.abs(l.valorParcela || 0); });
-      lancsFat.filter(l => l.tipo === 'fixo' && l.pago && l.cartaoId === c.id)
-              .forEach(l => { valorFat += (l.valor || 0); });
+      allLancsHome.filter(l => !l.autoFatura && l.tipo === 'credito' && l.cartaoId === c.id &&
+                               (l.mesPagamento || l.mesAno) === mesAnoFat)
+                  .forEach(l => { valorFat += Math.abs(l.valorParcela || 0); });
+      allLancsHome.filter(l => !l.autoFatura && l.tipo === 'fixo' && l.pago && l.cartaoId === c.id &&
+                               (l.mesPagamento || l.mesAno) === mesAnoFat)
+                  .forEach(l => { valorFat += (l.valor || 0); });
       const strF = dFechAtual.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'});
       const strV = dVencAtual.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'});
       return `<div class="cartao-chip" style="cursor:pointer" onclick="App._openCartaoBS(${c.id})">
