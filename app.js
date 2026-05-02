@@ -1105,14 +1105,17 @@ const App = (() => {
       const mesAnoCompra = mesAnoStr(dMesBase.getMonth(), dMesBase.getFullYear());
       if(!state.editingId){
         const grupoId=Date.now();
-        // Parcela 1 → mesAnoCompra, parcela 2 → mesAnoCompra+1, etc.
+        // mesAno = mês da COMPRA (para aparecer no mês certo na aba Lançamentos)
+        // mesPagamento = mês da FATURA (para cálculo da fatura automática)
+        const mesAnoCompra = mesAnoStr(dCompra.getMonth(), dCompra.getFullYear());
         for(let i=0;i<n;i++){
           const dParcela = new Date(dMesBase);
           dParcela.setMonth(dParcela.getMonth()+i);
-          const maParcela = mesAnoStr(dParcela.getMonth(), dParcela.getFullYear());
+          const maPagamento = mesAnoStr(dParcela.getMonth(), dParcela.getFullYear());
           await DB.addLancamento({
             tipo:'credito',categoriaId:catId,subcat,descricao:desc,
-            mesAno:maParcela,
+            mesAno:mesAnoCompra,
+            mesPagamento:maPagamento,
             dataCompra:dataCompra,
             valorTotal:valor,totalParcelas:n,valorParcela,
             parcela:i+1,cartaoId,data:dataCompra,grupoId,estorno,
@@ -2234,7 +2237,7 @@ const App = (() => {
     // Coletar todos os mesAno de faturas que têm parcelas deste cartão
     const mesesFatura = [...new Set(
       allLancs.filter(l => !l.autoFatura && l.tipo === 'credito' && l.cartaoId === cartaoId)
-              .map(l => l.mesAno)
+              .map(l => l.mesPagamento || l.mesAno)
     )];
     // Garantir que a fatura atual também é processada (mesmo sem créditos)
     const diaF = cartao.fechamento || 5;
@@ -2254,7 +2257,7 @@ const App = (() => {
       // Valor = soma de todas as parcelas deste cartão neste mesAno de fatura
       const parcelasFatura = allLancs.filter(l =>
         !l.autoFatura && l.tipo === 'credito' &&
-        l.cartaoId === cartaoId && l.mesAno === mesAnoFat
+        l.cartaoId === cartaoId && (l.mesPagamento || l.mesAno) === mesAnoFat
       );
       let totalFatura = parcelasFatura.reduce((s, l) => s + Math.abs(l.valorParcela || 0), 0);
       // Inclui fixos do cartão pagos nesta fatura
@@ -2417,6 +2420,40 @@ const App = (() => {
     localStorage.setItem('migr_parcelas_regra_v1', '1');
   }
 
+  async function migrarMesAnoParaCompra() {
+    // v2: mesAno = mês da compra, mesPagamento = mês da fatura
+    const jaRodou = localStorage.getItem('migr_mesano_compra_v2');
+    if (jaRodou) return;
+    const allLancs = await DB.getAllLancamentos();
+    const creditos = allLancs.filter(l => l.tipo === 'credito' && !l.autoFatura && l.cartaoId && (l.dataCompra || l.data));
+    let count = 0;
+    const grupos = {};
+    creditos.forEach(l => { if (l.grupoId) { if (!grupos[l.grupoId]) grupos[l.grupoId] = []; grupos[l.grupoId].push(l); } });
+    for (const [grupoId, parcelas] of Object.entries(grupos)) {
+      parcelas.sort((a, b) => (a.parcela || 0) - (b.parcela || 0));
+      const primeira = parcelas[0];
+      const cartao = getCartaoById(primeira.cartaoId);
+      if (!cartao) continue;
+      const dataC = primeira.dataCompra || primeira.data;
+      if (!dataC) continue;
+      const dCompra = new Date(dataC + 'T12:00:00');
+      const mesAnoCompra = mesAnoStr(dCompra.getMonth(), dCompra.getFullYear());
+      const { dMesBase } = calcMesAnoFatura(dCompra, cartao.fechamento || 5, cartao.vencimento || 10);
+      for (let i = 0; i < parcelas.length; i++) {
+        const p = parcelas[i];
+        const dParcela = new Date(dMesBase);
+        dParcela.setMonth(dParcela.getMonth() + i);
+        const mesPag = mesAnoStr(dParcela.getMonth(), dParcela.getFullYear());
+        if (p.mesAno !== mesAnoCompra || p.mesPagamento !== mesPag) {
+          await DB.updateLancamento({ ...p, mesAno: mesAnoCompra, mesPagamento: mesPag });
+          count++;
+        }
+      }
+    }
+    console.log('[migração v2] ' + count + ' parcelas: mesAno=compra, mesPagamento=fatura');
+    localStorage.setItem('migr_mesano_compra_v2', '1');
+  }
+
   async function init(){
     await DB.open();
     await DB.seedDefaults();
@@ -2433,6 +2470,7 @@ const App = (() => {
     // Migração: recalcular mesAno das parcelas de crédito pela regra oficial
     // (precisa rodar após loadData para ter state.cartoes disponível)
     await migrarParcelasParaRegraOficial();
+    await migrarMesAnoParaCompra();
     // Recalcular faturas automáticas para todos os cartões
     for(const c of state.cartoes) await atualizarFaturaFixa(c.id);
     await loadData(); // recarregar com as faturas atualizadas
