@@ -422,7 +422,7 @@ const App = (() => {
               .forEach(l => { valorFat += (l.valor || 0); });
       const strF = dFechAtual.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'});
       const strV = dVencAtual.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'});
-      return `<div class="cartao-chip" style="cursor:pointer" onclick="App.abrirCartao(${c.id})">
+      return `<div class="cartao-chip" style="cursor:pointer" onclick="App._openCartaoBS(${c.id})">
         <div class="cartao-band" style="background:${c.cor}"></div>
         <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0">
           ${getBancoIconHtml(c.nome,30)||`<div style="width:30px;height:30px;border-radius:8px;background:${c.cor}22;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0">💳</div>`}
@@ -524,8 +524,10 @@ const App = (() => {
     const bgCor = isEntrada ? 'var(--green-dim)' : isFixo ? '#88889922' :
                   isCredito && cartao ? cartao.cor+'28' : 'var(--red-dim)';
     const sinal = (isEntrada || isEstorno) ? '+' : '-';
-    const valor = isCredito ? Math.abs(l.valorParcela||0) : (l.valor||0);
-    const dataTxt = l.data ? new Date(l.data+'T12:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}) : '';
+    // Crédito: mostra valor total da compra; dataCompra como data de referência
+    const valor = isCredito ? Math.abs(l.valorTotal || l.valorParcela || 0) : (l.valor||0);
+    const dataRef = isCredito ? (l.dataCompra || l.data) : l.data;
+    const dataTxt = dataRef ? new Date(dataRef+'T12:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}) : '';
 
     // ── Nome em destaque: descrição > subcategoria > categoria ──
     let nome;
@@ -557,7 +559,8 @@ const App = (() => {
     } else if (isCredito && cartao) {
       if (isEstorno) detalhe += ' · Estorno';
       detalhe += ` · ${cartao.nome}`;
-      if (l.parcela && l.totalParcelas) detalhe += ` · ${l.parcela}/${l.totalParcelas}`;
+      if (l.totalParcelas > 1) detalhe += ` · ${l.totalParcelas}x de ${fmtMoney(Math.abs(l.valorParcela||0))}`;
+      else detalhe += ' · à vista';
     } else if (isDebito) {
       detalhe += ' · Débito';
     } else if (l.fixo) {
@@ -623,9 +626,21 @@ const App = (() => {
 
   function renderLancamentos() {
     document.getElementById('lanc-month-label').textContent=`${MONTHS[state.currentMonth]} ${state.currentYear}`;
-    let lancs = [...state.lancamentos].sort((a,b)=>{
-      const aTemData = !!a.data;
-      const bTemData = !!b.data;
+    // Crédito: mostrar só a parcela 1 de cada grupo (compra), referenciada pela dataCompra
+    // Remover parcelas 2+ do mesmo grupo de crédito
+    const gruposVistosLanc = new Set();
+    let lancs = [...state.lancamentos].filter(l => {
+      if (l.tipo === 'credito' && l.grupoId) {
+        if (l.parcela > 1) return false; // só mostra parcela 1
+        if (gruposVistosLanc.has(l.grupoId)) return false;
+        gruposVistosLanc.add(l.grupoId);
+      }
+      return true;
+    }).sort((a,b)=>{
+      const aData = a.tipo==='credito' ? (a.dataCompra||a.data) : a.data;
+      const bData = b.tipo==='credito' ? (b.dataCompra||b.data) : b.data;
+      const aTemData = !!aData;
+      const bTemData = !!bData;
       if (!aTemData && bTemData) return -1;
       if (aTemData && !bTemData) return 1;
       if (!aTemData && !bTemData) {
@@ -635,7 +650,7 @@ const App = (() => {
         const bLabel = (b.subcat || bCat?.nome || '').toLowerCase();
         return aLabel.localeCompare(bLabel, 'pt-BR');
       }
-      if (b.data !== a.data) return b.data.localeCompare(a.data);
+      if (bData !== aData) return bData.localeCompare(aData);
       return (b.criadoEm||0)-(a.criadoEm||0);
     });
 
@@ -687,7 +702,7 @@ const App = (() => {
     const totalSaidas = lancs.filter(l=>['debito','credito','fixo'].includes(l.tipo)).reduce((s,l)=>{
       if (l.tipo==='fixo') return s+(l.pago ? l.valor : 0);
       if (l.tipo==='debito') return s+(isDateConfirmed(l.data) ? l.valor : 0);
-      if (l.tipo==='credito') return s+(isDateConfirmed(l.data) ? (l.valorParcela||l.valor) : 0);
+      if (l.tipo==='credito') return s+(isDateConfirmed(l.dataCompra||l.data) ? (l.valorTotal||l.valorParcela||l.valor) : 0);
       return s;
     },0);
     const saldo = totalEntradas - totalSaidas;
@@ -1634,33 +1649,48 @@ const App = (() => {
     }).join('');
 
     // ── 3. Transações da fatura atual ──
-    // São os lançamentos de crédito cujo mesAno = mesAnoFatKey e cartaoId = c.id
+    // Parcelas cujo mesAno = mesAnoFatKey (fatura de vencimento deste mês)
     const txAtual = allLancs.filter(l =>
-      !l.autoFatura &&
-      l.tipo === 'credito' &&
-      l.cartaoId === c.id &&
-      l.mesAno === mesAnoFatKey
-    ).sort((a,b) => (b.data||b.dataCompra||'').localeCompare(a.data||a.dataCompra||''));
+      !l.autoFatura && l.tipo === 'credito' &&
+      l.cartaoId === c.id && l.mesAno === mesAnoFatKey
+    ).sort((a,b) => (b.dataCompra||b.data||'').localeCompare(a.dataCompra||a.data||''));
 
     const txHtml = txAtual.length === 0
-      ? `<div style="padding:16px 0;text-align:center;color:var(--text3);font-size:13px">Nenhuma transação neste período</div>`
+      ? `<div style="padding:16px 0;text-align:center;color:var(--text3);font-size:13px">Nenhuma transação nesta fatura</div>`
       : txAtual.map(l => {
           const cat = getCatById(l.categoriaId);
-          const emoji = cat?.emoji || '💳';
-          const cor   = cat?.cor   || c.cor;
-          const parcelaBadge = (l.totalParcelas > 1)
-            ? `<span class="cartao-bs-badge">${l.parcela||'?'}/${l.totalParcelas}</span>` : '';
-          const dataFmt = (l.data||l.dataCompra)
-            ? new Date((l.data||l.dataCompra)+'T12:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'short'})
+          // Ícone: emoji da subcategoria ou categoria
+          let emoji = cat?.emoji || '💳';
+          if (l.subcat && cat?.subcats) {
+            const sub = cat.subcats.find(s => (typeof s==='object' ? s.nome : s) === l.subcat);
+            if (sub?.emoji) emoji = sub.emoji;
+          }
+          const cor = c.cor;
+          // Nome: descrição > subcat > cat
+          const nome = l.descricao || l.subcat || cat?.nome || 'Compra';
+          // Detalhe: "subcat · data da compra · parcela X/Y"
+          let sub = '';
+          if (l.subcat && cat) sub = `${cat.nome} › ${l.subcat}`;
+          else if (cat) sub = cat.nome;
+          const dataCompraFmt = (l.dataCompra||l.data)
+            ? new Date((l.dataCompra||l.data)+'T12:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})
             : '';
-          const valor = l.valorParcela !== undefined ? l.valorParcela : (l.valor || 0);
-          return `<div class="cartao-bs-tx">
-            <div class="cartao-bs-tx-icon" style="background:${cor}22">${emoji}</div>
-            <div class="cartao-bs-tx-info">
-              <div class="cartao-bs-tx-desc">${l.descricao||'Sem descrição'}${parcelaBadge}</div>
-              <div class="cartao-bs-tx-sub">${cat?.nome||'Sem categoria'}${dataFmt?' · '+dataFmt:''}</div>
+          if (dataCompraFmt) sub += (sub ? ' · ' : '') + dataCompraFmt;
+          const parcelaInfo = l.totalParcelas > 1
+            ? ` · <span style="font-size:10px;padding:1px 5px;border-radius:4px;background:${cor}22;color:${cor}">${l.parcela||1}/${l.totalParcelas}</span>`
+            : ' · à vista';
+          const valor = Math.abs(l.valorParcela || 0);
+          return `<div class="feed-item" onclick="App.editLancamento(${l.id})" style="margin:0 0 4px;border-radius:10px">
+            <div class="feed-icon" style="background:${cor}22">
+              <span style="font-size:17px;line-height:1">${emoji}</span>
             </div>
-            <div class="cartao-bs-tx-valor">${fmtMoney(Math.abs(valor))}</div>
+            <div class="feed-info">
+              <div class="feed-nome">${nome}${parcelaInfo}</div>
+              <div class="feed-cat">${sub}</div>
+            </div>
+            <div class="feed-right">
+              <div class="feed-val" style="color:${cor}">-${fmtMoney(valor)}</div>
+            </div>
           </div>`;
         }).join('');
 
@@ -2189,79 +2219,75 @@ const App = (() => {
 
   // Recalcula e atualiza o gasto fixo de pagamento de fatura de um cartão
   // para o mês M+1 com base nos créditos do mês M
+  // Recalcula os lançamentos automáticos de pagamento de fatura para um cartão.
+  // Regra: para cada fatura (identificada pelo mesAno do vencimento = mesAnoFat),
+  // o lançamento automático fica no mesmo mesAno (= mês do vencimento)
+  // com valor = soma de todos os créditos cujo mesAno == mesAnoFat.
+  // A data do lançamento = diaV/mesV/anoV (data de vencimento).
   async function atualizarFaturaFixa(cartaoId) {
     const allLancs = await DB.getAllLancamentos();
+    const cartao = getCartaoById(cartaoId);
+    if (!cartao) return;
     const hoje = new Date();
-    const mesAtual = hoje.getMonth();
-    const anoAtual = hoje.getFullYear();
+    const mesAtualKey = mesAnoStr(hoje.getMonth(), hoje.getFullYear());
 
-    // Para cada mês que tem lançamentos de crédito neste cartão,
-    // garantir que existe um gasto fixo no mês SEGUINTE com o valor total
-    const mesesComCredito = [...new Set(
-      allLancs.filter(l => l.tipo === 'credito' && l.cartaoId === cartaoId).map(l => l.mesAno)
+    // Coletar todos os mesAno de faturas que têm parcelas deste cartão
+    const mesesFatura = [...new Set(
+      allLancs.filter(l => !l.autoFatura && l.tipo === 'credito' && l.cartaoId === cartaoId)
+              .map(l => l.mesAno)
     )];
+    // Garantir que a fatura atual também é processada (mesmo sem créditos)
+    const diaF = cartao.fechamento || 5;
+    const diaV = cartao.vencimento || 10;
+    const diaHoje = hoje.getDate();
+    let mFech, yFech;
+    if (diaF <= diaHoje) { mFech = hoje.getMonth(); yFech = hoje.getFullYear(); }
+    else { const dp = new Date(hoje.getFullYear(), hoje.getMonth()-1, diaF); mFech=dp.getMonth(); yFech=dp.getFullYear(); }
+    const dVencAtual = new Date(yFech, mFech + 1, diaV);
+    const mesAnoFatAtual = mesAnoStr(dVencAtual.getMonth(), dVencAtual.getFullYear());
+    if (!mesesFatura.includes(mesAnoFatAtual)) mesesFatura.push(mesAnoFatAtual);
 
-    // Também garantir mês atual e próximo (podem estar vazios agora mas precisam do fixo)
-    const mesAtualKey = mesAnoStr(mesAtual, anoAtual);
-    if (!mesesComCredito.includes(mesAtualKey)) mesesComCredito.push(mesAtualKey);
+    for (const mesAnoFat of mesesFatura) {
+      // Não criar lançamentos em meses passados
+      if (mesAnoNum(mesAnoFat) < mesAnoNum(mesAtualKey)) continue;
 
-    for (const mesCredito of mesesComCredito) {
-      // Calcular total da fatura usando EXATAMENTE a mesma lógica da tela inicial
-      // (mesma fórmula do creditoPorCartao em renderHome)
-      const lancsDoMes = allLancs.filter(l => l.mesAno === mesCredito);
-      let totalFatura = 0;
-      // créditos normais (compras parceladas/à vista no cartão)
-      lancsDoMes.filter(l => l.tipo === 'credito' && l.cartaoId === cartaoId)
-        .forEach(l => { totalFatura += (l.valorParcela || l.valor || 0); });
-      // fixos já pagos no cartão (ex: assinatura lançada como fixo no cartão)
-      lancsDoMes.filter(l => l.tipo === 'fixo' && l.pago && l.cartaoId === cartaoId)
-        .forEach(l => { totalFatura += (l.valor || 0); });
+      // Valor = soma de todas as parcelas deste cartão neste mesAno de fatura
+      const parcelasFatura = allLancs.filter(l =>
+        !l.autoFatura && l.tipo === 'credito' &&
+        l.cartaoId === cartaoId && l.mesAno === mesAnoFat
+      );
+      let totalFatura = parcelasFatura.reduce((s, l) => s + Math.abs(l.valorParcela || 0), 0);
+      // Inclui fixos do cartão pagos nesta fatura
+      allLancs.filter(l => l.tipo === 'fixo' && !l.autoFatura && l.cartaoId === cartaoId && l.mesAno === mesAnoFat && l.pago)
+              .forEach(l => { totalFatura += (l.valor || 0); });
 
-      // O mesAno do crédito é a tela onde aparece. O pagamento é sempre no mês seguinte,
-      // com o dia de vencimento do cartão.
-      const cartaoTemp = getCartaoById(cartaoId);
-      const vencimentoCartao = cartaoTemp?.vencimento || 10;
-      const [mesStr, anoStr] = mesCredito.split('-');
-      const mCred = parseInt(mesStr) - 1;
-      const yCred = parseInt(anoStr);
-      const dPgto = new Date(yCred, mCred + 1, vencimentoCartao);
-      const mesPgtoKey = mesAnoStr(dPgto.getMonth(), dPgto.getFullYear());
+      // Data de vencimento desta fatura: diaV no mês do mesAnoFat
+      const [mmFat, yyFat] = mesAnoFat.split('-').map(Number);
+      const dataVenc = `${yyFat}-${String(mmFat).padStart(2,'0')}-${String(diaV).padStart(2,'0')}`;
 
-      // Não criar em meses passados
-      if (mesAnoNum(mesPgtoKey) < mesAnoNum(mesAtualKey)) continue;
-
-      // Verificar se já existe um gasto fixo de fatura deste cartão nesse mês
       const existente = allLancs.find(l =>
-        l.tipo === 'fixo' && l.faturaCartaoId === cartaoId && l.mesAno === mesPgtoKey
+        l.autoFatura && l.faturaCartaoId === cartaoId && l.mesAno === mesAnoFat
       );
 
-      const cartao = getCartaoById(cartaoId);
-      const diaVenc = cartao?.vencimento || 10;
-      const dataVenc = `${dPgto.getFullYear()}-${String(dPgto.getMonth()+1).padStart(2,'0')}-${String(diaVenc).padStart(2,'0')}`;
       const obj = {
         tipo: 'fixo',
         faturaCartaoId: cartaoId,
         cartaoId: null,
         pagamento: 'debito',
-        descricao: `Fatura ${cartao?.nome || 'Cartão'}`,
+        descricao: `Fatura ${cartao.nome}`,
         valor: totalFatura,
         categoriaId: null,
         pago: existente?.pago || false,
         data: dataVenc,
         dataPagamento: existente?.dataPagamento || null,
-        mesAno: mesPgtoKey,
+        mesAno: mesAnoFat,
         autoFatura: true,
         criadoEm: existente?.criadoEm || Date.now(),
       };
 
       if (existente) {
-        if (totalFatura > 0) {
-          obj.id = existente.id;
-          await DB.updateLancamento(obj);
-        } else {
-          // Não há mais créditos neste mês → remover a fatura automática
-          await DB.deleteLancamento(existente.id);
-        }
+        if (totalFatura > 0) { obj.id = existente.id; await DB.updateLancamento(obj); }
+        else { await DB.deleteLancamento(existente.id); }
       } else if (totalFatura > 0) {
         await DB.addLancamento(obj);
       }
@@ -2347,6 +2373,17 @@ const App = (() => {
     localStorage.setItem('migr_fatura_debito_v2', '1');
   }
 
+  async function migrarFaturasAutoLimpeza() {
+    // Remove todas as faturas autoFatura para que sejam recriadas com a lógica correta
+    const jaRodou = localStorage.getItem('migr_fatura_auto_limpeza_v1');
+    if (jaRodou) return;
+    const allLancs = await DB.getAllLancamentos();
+    const faturas = allLancs.filter(l => l.autoFatura);
+    for (const l of faturas) await DB.deleteLancamento(l.id);
+    console.log('[migração] ' + faturas.length + ' faturas automáticas removidas para recriação');
+    localStorage.setItem('migr_fatura_auto_limpeza_v1', '1');
+  }
+
   async function migrarParcelasParaRegraOficial() {
     const jaRodou = localStorage.getItem('migr_parcelas_regra_v1');
     if (jaRodou) return;
@@ -2391,6 +2428,8 @@ const App = (() => {
     // Migração: preencher data das faturas automáticas com dia de vencimento do cartão
     await migrarDataFaturas();
     await loadData();
+    // Migração: limpar faturas automáticas antigas (lógica mudou)
+    await migrarFaturasAutoLimpeza();
     // Migração: recalcular mesAno das parcelas de crédito pela regra oficial
     // (precisa rodar após loadData para ter state.cartoes disponível)
     await migrarParcelasParaRegraOficial();
