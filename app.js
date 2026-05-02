@@ -477,16 +477,23 @@ const App = (() => {
       allLancsHome.filter(l => !l.autoFatura && l.tipo === 'fixo' && l.pago && l.cartaoId === c.id &&
                                (l.mesPagamento || l.mesAno) === mesAnoFat)
                   .forEach(l => { valorFat += (l.valor || 0); });
+      const strI = dInicio.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'});
       const strF = dFechAtual.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'});
       const strV = dVencAtual.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'});
-      return `<div class="cartao-chip" style="cursor:pointer" onclick="App._openCartaoBS(${c.id})">
+      return `<div class="cartao-chip" style="cursor:pointer;padding:12px 14px" onclick="App._openCartaoBS(${c.id})">
         <div class="cartao-band" style="background:${c.cor}"></div>
-        <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0">
-          ${getBancoIconHtml(c.nome,30)||`<div style="width:30px;height:30px;border-radius:8px;background:${c.cor}22;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0">💳</div>`}
+        <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0">
+          ${getBancoIconHtml(c.nome,32)||`<div style="width:32px;height:32px;border-radius:8px;background:${c.cor}22;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0">💳</div>`}
           <div class="cartao-chip-info" style="flex:1;min-width:0">
-            <div class="cartao-chip-nome">${c.nome}</div>
-            <div style="font-size:10px;color:var(--text3);margin-top:1px">Fatura <strong style="color:var(--text2)">${nomeFat}</strong> · Fecha ${strF} · Vence ${strV}</div>
-            <div class="cartao-mini-bar" style="margin-top:4px"><div class="cartao-mini-fill" style="width:${c.limite?Math.min((valorFat/c.limite)*100,100).toFixed(0):0}%;background:${c.cor}"></div></div>
+            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+              <div class="cartao-chip-nome">${c.nome}</div>
+              <div style="font-size:10px;color:var(--text2);background:${c.cor}22;padding:1px 7px;border-radius:6px;font-weight:600">${nomeFat}</div>
+            </div>
+            <div style="font-size:10.5px;color:var(--text3);margin-top:3px;line-height:1.45">
+              Período <span style="color:var(--text2)">${strI} → ${strF}</span><br>
+              Vence <span style="color:var(--text2)">${strV}</span>
+            </div>
+            <div class="cartao-mini-bar" style="margin-top:6px"><div class="cartao-mini-fill" style="width:${c.limite?Math.min((valorFat/c.limite)*100,100).toFixed(0):0}%;background:${c.cor}"></div></div>
           </div>
         </div>
         <div class="cartao-chip-vals">
