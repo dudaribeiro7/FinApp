@@ -1534,52 +1534,96 @@ const App = (() => {
     const body = document.getElementById('cartao-bs-body');
     const allLancs = await DB.getAllLancamentos();
     const hoje = new Date();
-    const mesAtualKey = mesAnoStr(hoje.getMonth(), hoje.getFullYear());
+
+    // ── Calcular mesAno da fatura ATUAL corretamente ──
+    // A fatura atual é aquela cujo fechamento já passou (ou é hoje) e cujo vencimento ainda não passou.
+    // Algoritmo: encontra a data de fechamento imediatamente anterior a hoje.
+    //   Ex: hoje = 02/05, fechamento = 4  → último dia 4 foi 04/04 → mesAno = "04-2026"
+    //   Ex: hoje = 02/05, fechamento = 1  → último dia 1 foi 01/05 → mesAno = "05-2026"
+    function _mesAnoFaturaAtual(cartao) {
+      const diaFech = cartao.fechamento || 5;
+      const diaHoje = hoje.getDate();
+      let mFech, yFech;
+      if (diaFech <= diaHoje) {
+        // O fechamento deste mês já passou (ou é hoje) → fatura fechou neste mês
+        mFech = hoje.getMonth();     // 0-based
+        yFech = hoje.getFullYear();
+      } else {
+        // O fechamento deste mês ainda não chegou → fatura fechou no mês passado
+        const d = new Date(hoje.getFullYear(), hoje.getMonth() - 1, diaFech);
+        mFech = d.getMonth();
+        yFech = d.getFullYear();
+      }
+      return mesAnoStr(mFech, yFech);
+    }
+
+    function _datasVencFechAtual(cartao, mesAnoFatKey) {
+      const [mm, yy] = mesAnoFatKey.split('-').map(Number);
+      const m = mm - 1; // 0-based
+      const dFech = new Date(yy, m, cartao.fechamento || 5);
+      // Vencimento: 1 mês após o fechamento, no dia de vencimento
+      const dVenc = new Date(yy, m + 1, cartao.vencimento || 10);
+      return { dFech, dVenc };
+    }
+
+    const mesAnoFatKey = _mesAnoFaturaAtual(c);
+    const { dFech, dVenc } = _datasVencFechAtual(c, mesAnoFatKey);
 
     // ── 1. Fatura atual ──
-    const faturasCartao = allLancs.filter(l => l.autoFatura && l.faturaCartaoId === c.id);
-    const faturaAtual   = faturasCartao.find(l => l.mesAno === mesAtualKey);
-    const valorFatura   = faturaAtual ? (faturaAtual.valor || 0) : 0;
-    const pago          = faturaAtual ? !!faturaAtual.pago : false;
+    // Montar _faturasPagas para usar isParcelaPaga
+    _faturasPagas = new Set();
+    allLancs.filter(l => l.autoFatura && l.faturaCartaoId && l.pago && l.mesAno)
+            .forEach(l => _faturasPagas.add(l.faturaCartaoId + '|' + l.mesAno));
 
-    // Data vencimento e fechamento
-    let strVenc = '—', strFech = '—';
-    if (c.vencimento) {
-      const v = new Date(hoje.getFullYear(), hoje.getMonth(), c.vencimento);
-      if (v < hoje) v.setMonth(v.getMonth()+1);
-      strVenc = v.toLocaleDateString('pt-BR',{day:'2-digit',month:'short'});
-    }
-    if (c.fechamento) {
-      const f = new Date(hoje.getFullYear(), hoje.getMonth(), c.fechamento);
-      if (f < hoje) f.setMonth(f.getMonth()+1);
-      strFech = f.toLocaleDateString('pt-BR',{day:'2-digit',month:'short'});
-    }
+    const faturasCartao = allLancs.filter(l => l.autoFatura && l.faturaCartaoId === c.id);
+    // A fatura automática do cartão está salva no mesAno seguinte ao fechamento (mês do vencimento)
+    const [mmFat, yyFat] = mesAnoFatKey.split('-').map(Number);
+    const dVencMesAno = new Date(yyFat, mmFat, 1); // mês seguinte ao fechamento
+    const mesAnoVenc = mesAnoStr(dVencMesAno.getMonth(), dVencMesAno.getFullYear());
+    const faturaAtual = faturasCartao.find(l => l.mesAno === mesAnoVenc)
+                     || faturasCartao.find(l => l.mesAno === mesAnoFatKey);
+
+    const valorFatura = faturaAtual ? (faturaAtual.valor || 0) : 0;
+    const pago = faturaAtual ? !!faturaAtual.pago : false;
+
+    const strFech = dFech.toLocaleDateString('pt-BR',{day:'2-digit',month:'short'});
+    const strVenc = dVenc.toLocaleDateString('pt-BR',{day:'2-digit',month:'short'});
+
+    // Label do mês referência da fatura (mês do fechamento)
+    const [mmRef] = mesAnoFatKey.split('-').map(Number);
+    const MONTHS_PT = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
+    const labelMesFatura = `${MONTHS_PT[mmRef-1]} de ${yyFat}`;
 
     const statusColor = pago ? '#4ade80' : (valorFatura > 0 ? '#f59e0b' : '#6b7280');
     const statusLabel = pago ? '✓ Paga' : (valorFatura > 0 ? '⏳ Aberta' : '– Sem lançamentos');
     const statusBg    = pago ? '#4ade8020' : (valorFatura > 0 ? '#f59e0b20' : '#6b728020');
 
-    // ── 2. Histórico (gráfico) ──
+    // ── 2. Histórico (gráfico) — baseado no mesAno de fechamento ──
     const meses = _cartaoBSPeriodo;
     const histDados = [];
     for (let i = meses - 1; i >= 0; i--) {
-      const d = new Date(hoje.getFullYear(), hoje.getMonth() - i, 1);
-      const key = mesAnoStr(d.getMonth(), d.getFullYear());
-      const fat = faturasCartao.find(l => l.mesAno === key);
+      // Cada barra = um mês de fechamento
+      const dRef = new Date(yyFat, (mmRef - 1) - i, 1);
+      const keyFech = mesAnoStr(dRef.getMonth(), dRef.getFullYear());
+      // A fatura automática deste mês de fechamento fica salva no mês seguinte
+      const dVencRef = new Date(dRef.getFullYear(), dRef.getMonth() + 1, 1);
+      const keyVenc  = mesAnoStr(dVencRef.getMonth(), dVencRef.getFullYear());
+      const fat = faturasCartao.find(l => l.mesAno === keyVenc)
+               || faturasCartao.find(l => l.mesAno === keyFech);
       histDados.push({
-        label: d.toLocaleDateString('pt-BR',{month:'short'}).replace('.',''),
+        label: dRef.toLocaleDateString('pt-BR',{month:'short'}).replace('.',''),
         valor: fat ? (fat.valor || 0) : 0,
-        key,
+        key: keyFech,
+        isAtual: keyFech === mesAnoFatKey,
       });
     }
     const maxVal = Math.max(...histDados.map(d=>d.valor), 1);
 
-    const barsHtml = histDados.map((d, i) => {
+    const barsHtml = histDados.map(d => {
       const h = Math.max((d.valor / maxVal) * 66, d.valor > 0 ? 4 : 0);
-      const isAtual = d.key === mesAtualKey;
       return `<div class="cartao-bs-bar-wrap">
-        <div class="cartao-bs-bar${isAtual?' active':''}"
-          style="height:${h}px;background:${isAtual ? c.cor : c.cor+'66'}"
+        <div class="cartao-bs-bar${d.isAtual?' active':''}"
+          style="height:${h}px;background:${d.isAtual ? c.cor : c.cor+'66'}"
           onclick="this.classList.toggle('active')">
           <div class="cartao-bs-bar-tip">${fmtMoney(d.valor)}</div>
         </div>
@@ -1588,67 +1632,73 @@ const App = (() => {
     }).join('');
 
     // ── 3. Transações da fatura atual ──
+    // São os lançamentos de crédito cujo mesAno = mesAnoFatKey e cartaoId = c.id
     const txAtual = allLancs.filter(l =>
-      !l.autoFatura && l.mesAno === mesAtualKey &&
-      (l.cartaoId === c.id || l.faturaCartaoId === c.id) &&
-      l.tipo === 'credito'
-    ).sort((a,b) => (b.data||'').localeCompare(a.data||''));
+      !l.autoFatura &&
+      l.tipo === 'credito' &&
+      l.cartaoId === c.id &&
+      l.mesAno === mesAnoFatKey
+    ).sort((a,b) => (b.data||b.dataCompra||'').localeCompare(a.data||a.dataCompra||''));
 
     const txHtml = txAtual.length === 0
-      ? `<div style="padding:16px 0;text-align:center;color:var(--text3);font-size:13px">Nenhuma transação neste mês</div>`
+      ? `<div style="padding:16px 0;text-align:center;color:var(--text3);font-size:13px">Nenhuma transação neste período</div>`
       : txAtual.map(l => {
           const cat = getCatById(l.categoriaId);
           const emoji = cat?.emoji || '💳';
           const cor   = cat?.cor   || c.cor;
           const parcelaBadge = (l.totalParcelas > 1)
-            ? `<span class="cartao-bs-badge">${l.numeroParcela||'?'}/${l.totalParcelas}</span>` : '';
-          const dataFmt = l.data
-            ? new Date(l.data+'T12:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'short'})
+            ? `<span class="cartao-bs-badge">${l.parcela||'?'}/${l.totalParcelas}</span>` : '';
+          const dataFmt = (l.data||l.dataCompra)
+            ? new Date((l.data||l.dataCompra)+'T12:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'short'})
             : '';
+          const valor = l.valorParcela !== undefined ? l.valorParcela : (l.valor || 0);
           return `<div class="cartao-bs-tx">
             <div class="cartao-bs-tx-icon" style="background:${cor}22">${emoji}</div>
             <div class="cartao-bs-tx-info">
               <div class="cartao-bs-tx-desc">${l.descricao||'Sem descrição'}${parcelaBadge}</div>
               <div class="cartao-bs-tx-sub">${cat?.nome||'Sem categoria'}${dataFmt?' · '+dataFmt:''}</div>
             </div>
-            <div class="cartao-bs-tx-valor">${fmtMoney(l.valor)}</div>
+            <div class="cartao-bs-tx-valor">${fmtMoney(Math.abs(valor))}</div>
           </div>`;
         }).join('');
 
-    // ── 4. Parcelas em aberto ──
-    const parcAberto = allLancs.filter(l =>
-      !l.autoFatura && l.totalParcelas > 1 &&
-      (l.cartaoId === c.id || l.faturaCartaoId === c.id) &&
-      mesAnoNum(l.mesAno) >= mesAnoNum(mesAtualKey) &&
-      !l.pago
+    // ── 4. Parcelas em aberto — reutilizando lógica de renderParcelamentos ──
+    const creditos = allLancs.filter(l =>
+      l.tipo === 'credito' && l.totalParcelas > 1 && l.grupoId && l.cartaoId === c.id
     );
-    // Agrupar por grupoId
     const grupos = {};
-    for (const l of parcAberto) {
-      const gid = l.grupoId || l.id;
-      if (!grupos[gid]) grupos[gid] = [];
-      grupos[gid].push(l);
-    }
-    const parcHtml = Object.values(grupos).length === 0
+    creditos.forEach(l => {
+      if (!grupos[l.grupoId]) grupos[l.grupoId] = [];
+      grupos[l.grupoId].push(l);
+    });
+
+    const comprasParc = Object.values(grupos).map(parcelas => {
+      parcelas.sort((a,b) => (a.parcela||0) - (b.parcela||0));
+      const primeira = parcelas[0];
+      const n = primeira.totalParcelas || parcelas.length;
+      const valorParcela = primeira.valorParcela || 0;
+      const totalCompra = primeira.valorTotal || (valorParcela * n);
+      const pagas = parcelas.filter(p => isParcelaPaga(p.mesAno, c)).length;
+      const restantes = n - pagas;
+      return { primeira, n, valorParcela, totalCompra, pagas, restantes, concluida: restantes === 0 };
+    }).filter(cp => !cp.concluida);
+
+    const parcHtml = comprasParc.length === 0
       ? `<div style="padding:16px 0;text-align:center;color:var(--text3);font-size:13px">Nenhuma parcela em aberto</div>`
-      : Object.values(grupos).map(grp => {
-          const primeiro = grp.reduce((a,b)=>mesAnoNum(a.mesAno)<mesAnoNum(b.mesAno)?a:b);
-          const total    = primeiro.totalParcelas || grp.length;
-          const pagas    = (primeiro.numeroParcela || 1) - 1;
-          const restantes = total - pagas;
-          const valMensal = primeiro.valor || 0;
-          const valRestante = valMensal * restantes;
-          const pct = Math.round((pagas / total) * 100);
+      : comprasParc.map(cp => {
+          const { primeira, n, valorParcela, pagas, restantes } = cp;
+          const valRestante = valorParcela * restantes;
+          const pct = Math.round((pagas / n) * 100);
           return `<div class="cartao-bs-parc">
             <div class="cartao-bs-parc-top">
-              <div class="cartao-bs-parc-desc">${primeiro.descricao||'Parcela'}</div>
+              <div class="cartao-bs-parc-desc">${primeira.descricao||'Parcela'}</div>
               <div class="cartao-bs-parc-vals">
-                <div class="cartao-bs-parc-mensal">${fmtMoney(valMensal)}/mês</div>
-                <div class="cartao-bs-parc-restante">${fmtMoney(valRestante)} restante</div>
+                <div class="cartao-bs-parc-mensal">${fmtMoney(Math.abs(valorParcela))}/mês</div>
+                <div class="cartao-bs-parc-restante">${fmtMoney(Math.abs(valRestante))} restante</div>
               </div>
             </div>
             <div class="cartao-bs-parc-prog-row">
-              <span class="cartao-bs-parc-prog-label">${pagas}/${total} pagas</span>
+              <span class="cartao-bs-parc-prog-label">${pagas}/${n} pagas</span>
               <span class="cartao-bs-parc-prog-label">${restantes} restantes</span>
             </div>
             <div class="cartao-bs-mini-bar">
@@ -1663,13 +1713,13 @@ const App = (() => {
         <div class="cartao-bs-section-title">Fatura atual</div>
         <div class="cartao-bs-fatura-card">
           <div>
-            <div style="font-size:11px;color:var(--text3);margin-bottom:4px">${new Date().toLocaleDateString('pt-BR',{month:'long',year:'numeric'})}</div>
+            <div style="font-size:11px;color:var(--text3);margin-bottom:4px">${labelMesFatura}</div>
             <div class="cartao-bs-fatura-valor">${fmtMoney(valorFatura)}</div>
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap">
             <span class="cartao-bs-status" style="background:${statusBg};color:${statusColor}">${statusLabel}</span>
           </div>
-          <div style="display:flex;gap:0;flex-direction:column;gap:6px">
+          <div style="display:flex;flex-direction:column;gap:6px">
             <div class="cartao-bs-fatura-row">
               <span class="cartao-bs-fatura-label">Fechamento</span>
               <span class="cartao-bs-fatura-val">${strFech}</span>
@@ -1694,7 +1744,7 @@ const App = (() => {
 
       <!-- Transações -->
       <div class="cartao-bs-section">
-        <div class="cartao-bs-section-title">Transações do mês</div>
+        <div class="cartao-bs-section-title">Transações · ${labelMesFatura}</div>
         ${txHtml}
       </div>
 
