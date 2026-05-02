@@ -1197,7 +1197,32 @@ const App = (() => {
     if(state.editingId){
       obj.id=state.editingId;
       const orig=state.lancamentos.find(l=>l.id===state.editingId);
-      if(orig){obj.criadoEm=orig.criadoEm;obj.grupoId=orig.grupoId;obj.templateId=orig.templateId;}
+      if(orig){
+        obj.criadoEm=orig.criadoEm;
+        obj.grupoId=orig.grupoId;
+        obj.templateId=orig.templateId;
+        // Preservar identidade da parcela de crédito ao editar
+        // (mesAno/mesPagamento determinam em qual mês e fatura ela aparece — sempre vêm do original,
+        //  pois o form nem oferece pra editar isso. valor/cartão/data já foram setados acima se mudaram.)
+        if(orig.tipo==='credito'){
+          obj.mesAno = obj.mesAno || orig.mesAno;
+          obj.mesPagamento = obj.mesPagamento || orig.mesPagamento;
+          // se o branch credito não setou (ex: edição que nem entra no else por algum motivo), preserva
+          if (obj.parcela == null) obj.parcela = orig.parcela;
+          if (obj.totalParcelas == null) obj.totalParcelas = orig.totalParcelas;
+          if (obj.dataCompra == null) obj.dataCompra = orig.dataCompra;
+          // Recalcular mesPagamento se a dataCompra ou cartão mudou
+          const cartaoNovo = getCartaoById(obj.cartaoId);
+          if (cartaoNovo && obj.dataCompra) {
+            const dC = new Date(obj.dataCompra + 'T12:00:00');
+            const { mmV, yyV } = faturaDeData(dC, cartaoNovo);
+            // i-ésima parcela (1-indexed): mês da fatura = mmV + (parcela-1)
+            const dP = new Date(yyV, (mmV - 1) + ((obj.parcela||1) - 1), 1);
+            obj.mesPagamento = mesAnoStr(dP.getMonth(), dP.getFullYear());
+            obj.mesAno = mesAnoStr(dC.getMonth(), dC.getFullYear());
+          }
+        }
+      }
       // Fixo e entrada_fixa com templateId: perguntar escopo da edição (exceto ao marcar pago)
       const isFixoOuEntradaFixa = (tipo==='fixo'||tipo==='entrada_fixa') && orig?.templateId;
       if(isFixoOuEntradaFixa){
@@ -1208,6 +1233,9 @@ const App = (() => {
         return;
       }
       await DB.updateLancamento(obj);
+      // Recalcular fatura automática do cartão se afeta uma fatura
+      if (obj.tipo === 'credito' && obj.cartaoId) await atualizarFaturaFixa(obj.cartaoId);
+      else if (obj.tipo === 'fixo' && obj.cartaoId) await atualizarFaturaFixa(obj.cartaoId);
       toast('Lançamento atualizado!','ok');
     } else {
       await DB.addLancamento(obj);
