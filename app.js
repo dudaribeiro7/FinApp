@@ -63,19 +63,20 @@ const App = (() => {
   let _faturasPagas = null;
 
   function isParcelaPaga(mesAno, cartao) {
-    if (_faturasPagas && cartao) {
-      // Fatura do mês X é paga no mês X+1, sempre
-      const [mm, yy] = mesAno.split('-').map(Number);
-      const dPgto = new Date(yy, mm, 1); // mm já é 1-based, então new Date(yy, mm) = mês seguinte
-      const mesPgto = mesAnoStr(dPgto.getMonth(), dPgto.getFullYear());
-      return _faturasPagas.has(cartao.id + '|' + mesPgto);
-    }
-    // fallback: data de vencimento
     const hoje = new Date();
     hoje.setHours(23, 59, 59, 0);
     const dVenc = dataVencFatura(mesAno, cartao);
-    if (!dVenc) return false; // sem info suficiente, não assume pago
-    return dVenc < hoje;
+    if (!dVenc) return false;
+    // Vencimento no passado → paga automaticamente
+    if (dVenc < hoje) return true;
+    // Vencimento futuro → verifica lançamento automático
+    if (_faturasPagas && cartao) {
+      const [mm, yy] = mesAno.split('-').map(Number);
+      const dPgto = new Date(yy, mm, 1);
+      const mesPgto = mesAnoStr(dPgto.getMonth(), dPgto.getFullYear());
+      return _faturasPagas.has(cartao.id + '|' + mesPgto);
+    }
+    return false;
   }
   function todayStr() {
     const d = new Date();
