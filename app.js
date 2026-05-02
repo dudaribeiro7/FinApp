@@ -139,57 +139,37 @@ const App = (() => {
   //   2) mesAnoVencimento: se diaVencimento > diaFechamento → mesmo mês do fechamento; senão → mês seguinte
   //   3) mesAnoFatura (tela): se vencimento == compra+1 → mês da compra; se vencimento == compra+2 → mês da compra+1
   // Retorna { dMesBase, mesAnoVencimento, offsetVencimento }
+  // Calcula em qual fatura (mesAno) uma compra entra, pela regra oficial:
+  // A primeira parcela entra na fatura cuja dataF é a primeira ANTERIOR OU IGUAL à dataCompra.
+  // Ou seja: encontra a dataF <= dataCompra mais recente.
+  // Nome da fatura = mesV/anoV (mês do vencimento, que é mês seguinte ao fechamento)
+  // mesAno salvo = mesAno do NOME da fatura = mês do vencimento
   function calcMesAnoFatura(dCompra, fechamento, vencimento) {
     const diaCompra = dCompra.getDate();
     const mCompra   = dCompra.getMonth();   // 0-based
     const yCompra   = dCompra.getFullYear();
 
-    // Passo 1: calcular mesAnoFechamento da fatura em que a compra entra
-    // Se diaFechamento <= diaCompra → a fatura desta compra fecha NESTE mês
-    // Se diaFechamento >  diaCompra → a fatura desta compra fecha no mês ANTERIOR
-    // (a compra foi feita antes do fechamento, então ainda está na fatura corrente)
+    // Fatura ATUAL = aquela com primeira dataF anterior ou IGUAL à dataCompra
+    // → Se diaF <= diaCompra: dataF está neste mesmo mês → usa este mês como mesF
+    // → Se diaF >  diaCompra: dataF já passou, estava no mês anterior → usa mês anterior
     let mFech, yFech;
     if (fechamento <= diaCompra) {
-      // A compra aconteceu APÓS o fechamento → entra na próxima fatura
-      // que fecha no próximo mês
-      mFech = mCompra + 1;
-      yFech = yCompra;
-    } else {
-      // A compra aconteceu ANTES do fechamento → ainda está na fatura atual
-      // que fecha neste mês
       mFech = mCompra;
       yFech = yCompra;
+    } else {
+      // fechamento ainda não chegou este mês → última dataF foi mês passado
+      const dPrev = new Date(yCompra, mCompra - 1, fechamento);
+      mFech = dPrev.getMonth();
+      yFech = dPrev.getFullYear();
     }
-    // Normalizar mês (caso mFech = 12 → janeiro do ano seguinte)
     const dFech = new Date(yFech, mFech, fechamento);
 
-    // Passo 2: calcular data de vencimento desta fatura
-    // Se diaVencimento > diaFechamento → vence no mesmo mês do fechamento
-    // Se diaVencimento < diaFechamento → vence no mês seguinte ao fechamento
-    let dVenc;
-    if (vencimento > fechamento) {
-      dVenc = new Date(dFech.getFullYear(), dFech.getMonth(), vencimento);
-    } else {
-      dVenc = new Date(dFech.getFullYear(), dFech.getMonth() + 1, vencimento);
-    }
+    // Vencimento: sempre mês seguinte ao fechamento, no diaV
+    // mesV = mesF + 1 (jan do próximo ano se mesF = dez)
+    const dVenc = new Date(yFech, mFech + 1, vencimento);
 
-    // Passo 3: em qual tela (mesAno) a compra aparece
-    // diffMeses = diferença entre mês do vencimento e mês da compra
-    const mCompraBase = new Date(yCompra, mCompra, 1);
-    const diffMeses = (dVenc.getFullYear() - mCompraBase.getFullYear()) * 12
-                    + (dVenc.getMonth()    - mCompraBase.getMonth());
-
-    let dMesBase;
-    if (diffMeses === 0) {
-      // vence no mesmo mês da compra → fatura aparece no mês anterior
-      dMesBase = new Date(yCompra, mCompra - 1, 1);
-    } else if (diffMeses === 1) {
-      // vence 1 mês após a compra → aparece no mês da compra
-      dMesBase = new Date(yCompra, mCompra, 1);
-    } else {
-      // vence 2+ meses após a compra → aparece no mês da compra + 1
-      dMesBase = new Date(yCompra, mCompra + 1, 1);
-    }
+    // mesAno salvo = mês do vencimento (nome da fatura = "MêsV/anoV")
+    const dMesBase = new Date(dVenc.getFullYear(), dVenc.getMonth(), 1);
 
     return { dMesBase, dFech, dVenc };
   }
@@ -243,7 +223,6 @@ const App = (() => {
       renderRelatorios();
     }
     if (id==='screen-perfil') renderPerfil();
-    if (id==='screen-sheets') renderSheetsScreen();
     if (id==='screen-parcelamentos') renderParcelamentos();
   }
   function goBack() { gotoScreen(state.prevScreen || 'screen-home'); }
@@ -412,35 +391,53 @@ const App = (() => {
       alertEl.innerHTML=`<div class="alert-banner"><div class="alert-icon"><svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div><div class="alert-text"><strong>${totalSemData} entrada${totalSemData>1?'s':''} sem data</strong> — não serão contabilizadas até receber uma data</div></div>`;
     } else alertEl.style.display='none';
 
-    // Cartões
+    // Cartões — mostra FATURA ATUAL (independente do mês selecionado)
+    const allLancsHome = await DB.getAllLancamentos();
+    const hoje = new Date();
     const cartaoEl = document.getElementById('h-cartoes');
     cartaoEl.innerHTML = state.cartoes.map(c=>{
-      const usado = creditoPorCartao[c.id]||0;
-      const pct = c.limite?Math.min((usado/c.limite)*100,100):0;
+      // Calcular fatura atual do cartão: primeira dataF anterior ou igual a hoje
+      const diaF = c.fechamento || 5;
+      const diaV = c.vencimento || 10;
+      const diaHoje = hoje.getDate();
+      let mFech, yFech;
+      if (diaF <= diaHoje) {
+        mFech = hoje.getMonth(); yFech = hoje.getFullYear();
+      } else {
+        const dPrev = new Date(hoje.getFullYear(), hoje.getMonth() - 1, diaF);
+        mFech = dPrev.getMonth(); yFech = dPrev.getFullYear();
+      }
+      const dFechAtual = new Date(yFech, mFech, diaF);
+      const dVencAtual = new Date(yFech, mFech + 1, diaV);
+      // mesAno da fatura = mês do vencimento
+      const mesAnoFat = mesAnoStr(dVencAtual.getMonth(), dVencAtual.getFullYear());
+      // Nome: MêsV/anoVYY
+      const nomeFat = MONTHS_SHORT[dVencAtual.getMonth()] + '/' + String(dVencAtual.getFullYear()).slice(2);
+      // Calcular valor da fatura = soma de créditos no mesAno dessa fatura
+      const lancsFat = allLancsHome.filter(l => l.mesAno === mesAnoFat && !l.autoFatura);
+      let valorFat = 0;
+      lancsFat.filter(l => l.tipo === 'credito' && l.cartaoId === c.id)
+              .forEach(l => { valorFat += Math.abs(l.valorParcela || 0); });
+      lancsFat.filter(l => l.tipo === 'fixo' && l.pago && l.cartaoId === c.id)
+              .forEach(l => { valorFat += (l.valor || 0); });
+      const strF = dFechAtual.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'});
+      const strV = dVencAtual.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'});
       return `<div class="cartao-chip" style="cursor:pointer" onclick="App.abrirCartao(${c.id})">
         <div class="cartao-band" style="background:${c.cor}"></div>
         <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0">
           ${getBancoIconHtml(c.nome,30)||`<div style="width:30px;height:30px;border-radius:8px;background:${c.cor}22;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0">💳</div>`}
           <div class="cartao-chip-info" style="flex:1;min-width:0">
-          <div class="cartao-chip-nome">${c.nome}</div>
-          <div class="cartao-chip-venc">Vence dia ${c.vencimento}</div>
-          <div class="cartao-mini-bar"><div class="cartao-mini-fill" style="width:${pct}%;background:${c.cor}"></div></div>
-        </div></div>
+            <div class="cartao-chip-nome">${c.nome}</div>
+            <div style="font-size:10px;color:var(--text3);margin-top:1px">Fatura <strong style="color:var(--text2)">${nomeFat}</strong> · Fecha ${strF} · Vence ${strV}</div>
+            <div class="cartao-mini-bar" style="margin-top:4px"><div class="cartao-mini-fill" style="width:${c.limite?Math.min((valorFat/c.limite)*100,100).toFixed(0):0}%;background:${c.cor}"></div></div>
+          </div>
+        </div>
         <div class="cartao-chip-vals">
-          <div class="cartao-chip-usado" style="color:${c.cor}">${fmtMoney(usado)}</div>
+          <div class="cartao-chip-usado" style="color:${c.cor}">${fmtMoney(valorFat)}</div>
           <div class="cartao-chip-limite" style="font-size:10px;color:var(--text3)">fatura</div>
         </div>
       </div>`;
     }).join('');
-
-    // Feed
-    const feedEl = document.getElementById('h-feed');
-    const recentes = [...lancs].sort((a,b)=>(b.criadoEm||0)-(a.criadoEm||0)).slice(0,6);
-    if (!recentes.length) {
-      feedEl.innerHTML='<div class="empty-state" style="padding:24px 0"><div class="empty-icon">💸</div><div class="empty-title">Nenhum lançamento</div><div class="empty-sub">Toque no + para adicionar</div></div>';
-    } else {
-      feedEl.innerHTML = recentes.map(l=>renderFeedItem(l,false)).join('');
-    }
   }
 
   function abrirCartao(cartaoId) {
@@ -1003,7 +1000,9 @@ const App = (() => {
     const dCompra=new Date(data+'T12:00:00');
     const diaCompra=dCompra.getDate();
     const { dMesBase: dMesBasePrev, dFech: dFechPrev, dVenc: dVencPrev } = calcMesAnoFatura(dCompra, fechamento, vencimento);
-    const faturaLabel = `fatura de ${MONTHS[dMesBasePrev.getMonth()]}/${dMesBasePrev.getFullYear()} · fecha ${dFechPrev.getDate()}/${dFechPrev.getMonth()+1} · vence ${dVencPrev.getDate()}/${dVencPrev.getMonth()+1}`;
+    // dMesBase = mês do vencimento (nome da fatura)
+    const nomeFatPrev = MONTHS_SHORT[dMesBasePrev.getMonth()]+'/'+String(dMesBasePrev.getFullYear()).slice(2);
+    const faturaLabel = `Fatura ${nomeFatPrev} · fecha ${dFechPrev.getDate()}/${dFechPrev.getMonth()+1} · vence ${dVencPrev.getDate()}/${dVencPrev.getMonth()+1}`;
     const parcela=val/n;
     let rows='';
     for(let i=0;i<Math.min(n,6);i++){
@@ -1108,7 +1107,8 @@ const App = (() => {
         // Atualizar gasto fixo de pagamento de fatura
         await atualizarFaturaFixa(cartaoId);
         state.lancamentos=await DB.getLancamentos(mesAno);
-        toast(`Compra salva — parcela 1 na fatura de ${MONTHS[dMesBase.getMonth()]}/${dMesBase.getFullYear()}`,'ok');
+        const nomeFat1 = MONTHS_SHORT[dMesBase.getMonth()]+'/'+String(dMesBase.getFullYear()).slice(2);
+        toast(`Compra salva — parcela 1 na fatura ${nomeFat1}`,'ok');
         goBack(); return;
       } else {
         obj.valorTotal=valor;obj.totalParcelas=n;obj.valorParcela=valorParcela;obj.cartaoId=cartaoId;obj.data=dataCompra;obj.estorno=document.getElementById('estorno-toggle')?.dataset.on==='1';
@@ -1444,6 +1444,7 @@ const App = (() => {
   async function renderLimiteCartoes(parentEl, append=false) {
     const allLancs = await DB.getAllLancamentos();
     const mesAtualKey = mesAnoStr(new Date().getMonth(), new Date().getFullYear());
+    const hoje = new Date();
 
     // _faturasPagas precisa estar atualizado
     _faturasPagas = new Set();
@@ -1451,13 +1452,22 @@ const App = (() => {
             .forEach(l => _faturasPagas.add(l.faturaCartaoId + '|' + l.mesAno));
 
     const rows = await Promise.all(state.cartoes.map(async c => {
-      // Limite comprometido = soma das faturas automáticas não pagas do mês atual em diante
+      // Calcular fatura atual pela regra oficial
+      const diaF = c.fechamento || 5;
+      const diaV = c.vencimento || 10;
+      const diaHoje = hoje.getDate();
+      let mFech, yFech;
+      if (diaF <= diaHoje) { mFech = hoje.getMonth(); yFech = hoje.getFullYear(); }
+      else { const dp = new Date(hoje.getFullYear(), hoje.getMonth()-1, diaF); mFech=dp.getMonth(); yFech=dp.getFullYear(); }
+      const dVencAtual = new Date(yFech, mFech + 1, diaV);
+      const mesAnoFatAtual = mesAnoStr(dVencAtual.getMonth(), dVencAtual.getFullYear());
+
+      // Limite comprometido = soma de créditos nas faturas a partir da fatura atual
       const parcelasEmAberto = allLancs.filter(l =>
-        l.autoFatura && l.faturaCartaoId === c.id &&
-        !l.pago &&
-        mesAnoNum(l.mesAno) >= mesAnoNum(mesAtualKey)
+        !l.autoFatura && l.tipo === 'credito' && l.cartaoId === c.id &&
+        mesAnoNum(l.mesAno) >= mesAnoNum(mesAnoFatAtual)
       );
-      const totalComprometido = parcelasEmAberto.reduce((s, l) => s + (l.valor || 0), 0);
+      const totalComprometido = parcelasEmAberto.reduce((s, l) => s + Math.abs(l.valorParcela || 0), 0);
 
       const pct = c.limite ? Math.min((totalComprometido / c.limite) * 100, 100) : 0;
       const disp = Math.max((c.limite || 0) - totalComprometido, 0);
@@ -1541,81 +1551,72 @@ const App = (() => {
     // Algoritmo: encontra a data de fechamento imediatamente anterior a hoje.
     //   Ex: hoje = 02/05, fechamento = 4  → último dia 4 foi 04/04 → mesAno = "04-2026"
     //   Ex: hoje = 02/05, fechamento = 1  → último dia 1 foi 01/05 → mesAno = "05-2026"
-    function _mesAnoFaturaAtual(cartao) {
-      const diaFech = cartao.fechamento || 5;
-      const diaHoje = hoje.getDate();
+    // Regra oficial: fatura atual = aquela com dataF <= hoje mais recente
+    // mesAno salvo = mês do vencimento (= mesF + 1)
+    function _faturaAtualCartao(cartao) {
+      const diaF = cartao.fechamento || 5;
+      const diaV = cartao.vencimento || 10;
+      const diaH = hoje.getDate();
       let mFech, yFech;
-      if (diaFech <= diaHoje) {
-        // O fechamento deste mês já passou (ou é hoje) → fatura fechou neste mês
-        mFech = hoje.getMonth();     // 0-based
-        yFech = hoje.getFullYear();
-      } else {
-        // O fechamento deste mês ainda não chegou → fatura fechou no mês passado
-        const d = new Date(hoje.getFullYear(), hoje.getMonth() - 1, diaFech);
-        mFech = d.getMonth();
-        yFech = d.getFullYear();
-      }
-      return mesAnoStr(mFech, yFech);
+      if (diaF <= diaH) { mFech = hoje.getMonth(); yFech = hoje.getFullYear(); }
+      else { const dp = new Date(hoje.getFullYear(), hoje.getMonth()-1, diaF); mFech=dp.getMonth(); yFech=dp.getFullYear(); }
+      const dFech = new Date(yFech, mFech, diaF);
+      const dVenc = new Date(yFech, mFech + 1, diaV);
+      // mesAno = mês do vencimento
+      const mesAnoFat = mesAnoStr(dVenc.getMonth(), dVenc.getFullYear());
+      return { dFech, dVenc, mesAnoFat };
     }
 
-    function _datasVencFechAtual(cartao, mesAnoFatKey) {
-      const [mm, yy] = mesAnoFatKey.split('-').map(Number);
-      const m = mm - 1; // 0-based
-      const dFech = new Date(yy, m, cartao.fechamento || 5);
-      // Vencimento: 1 mês após o fechamento, no dia de vencimento
-      const dVenc = new Date(yy, m + 1, cartao.vencimento || 10);
-      return { dFech, dVenc };
-    }
-
-    const mesAnoFatKey = _mesAnoFaturaAtual(c);
-    const { dFech, dVenc } = _datasVencFechAtual(c, mesAnoFatKey);
+    const { dFech, dVenc, mesAnoFat: mesAnoFatKey } = _faturaAtualCartao(c);
 
     // ── 1. Fatura atual ──
-    // Montar _faturasPagas para usar isParcelaPaga
     _faturasPagas = new Set();
     allLancs.filter(l => l.autoFatura && l.faturaCartaoId && l.pago && l.mesAno)
             .forEach(l => _faturasPagas.add(l.faturaCartaoId + '|' + l.mesAno));
 
-    const faturasCartao = allLancs.filter(l => l.autoFatura && l.faturaCartaoId === c.id);
-    // A fatura automática do cartão está salva no mesAno seguinte ao fechamento (mês do vencimento)
+    // mesAnoFatKey já é o mês do vencimento (nome da fatura)
     const [mmFat, yyFat] = mesAnoFatKey.split('-').map(Number);
-    const dVencMesAno = new Date(yyFat, mmFat, 1); // mês seguinte ao fechamento
-    const mesAnoVenc = mesAnoStr(dVencMesAno.getMonth(), dVencMesAno.getFullYear());
-    const faturaAtual = faturasCartao.find(l => l.mesAno === mesAnoVenc)
-                     || faturasCartao.find(l => l.mesAno === mesAnoFatKey);
 
-    const valorFatura = faturaAtual ? (faturaAtual.valor || 0) : 0;
-    const pago = faturaAtual ? !!faturaAtual.pago : false;
+    // Valor da fatura = soma dos créditos no mesAno da fatura
+    const lancsFatAtual = allLancs.filter(l => l.mesAno === mesAnoFatKey && !l.autoFatura);
+    let valorFatura = 0;
+    lancsFatAtual.filter(l => l.tipo === 'credito' && l.cartaoId === c.id)
+                 .forEach(l => { valorFatura += Math.abs(l.valorParcela || 0); });
+    lancsFatAtual.filter(l => l.tipo === 'fixo' && l.pago && l.cartaoId === c.id)
+                 .forEach(l => { valorFatura += (l.valor || 0); });
+    // Status pago: via fatura automática
+    const faturasCartao = allLancs.filter(l => l.autoFatura && l.faturaCartaoId === c.id);
+    const faturaAutoAtual = faturasCartao.find(l => l.mesAno === mesAnoFatKey);
+    const pago = faturaAutoAtual ? !!faturaAutoAtual.pago : false;
 
     const strFech = dFech.toLocaleDateString('pt-BR',{day:'2-digit',month:'short'});
     const strVenc = dVenc.toLocaleDateString('pt-BR',{day:'2-digit',month:'short'});
 
-    // Label do mês referência da fatura (mês do fechamento)
-    const [mmRef] = mesAnoFatKey.split('-').map(Number);
+    // Label da fatura = mês do vencimento (nome oficial)
     const MONTHS_PT = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
-    const labelMesFatura = `${MONTHS_PT[mmRef-1]} de ${yyFat}`;
+    const labelMesFatura = `${MONTHS_PT[mmFat-1]} de ${yyFat}`;
 
     const statusColor = pago ? '#4ade80' : (valorFatura > 0 ? '#f59e0b' : '#6b7280');
     const statusLabel = pago ? '✓ Paga' : (valorFatura > 0 ? '⏳ Aberta' : '– Sem lançamentos');
     const statusBg    = pago ? '#4ade8020' : (valorFatura > 0 ? '#f59e0b20' : '#6b728020');
 
-    // ── 2. Histórico (gráfico) — baseado no mesAno de fechamento ──
+    // ── 2. Histórico (gráfico) — baseado no mesAno do vencimento (nome da fatura) ──
     const meses = _cartaoBSPeriodo;
     const histDados = [];
     for (let i = meses - 1; i >= 0; i--) {
-      // Cada barra = um mês de fechamento
-      const dRef = new Date(yyFat, (mmRef - 1) - i, 1);
-      const keyFech = mesAnoStr(dRef.getMonth(), dRef.getFullYear());
-      // A fatura automática deste mês de fechamento fica salva no mês seguinte
-      const dVencRef = new Date(dRef.getFullYear(), dRef.getMonth() + 1, 1);
-      const keyVenc  = mesAnoStr(dVencRef.getMonth(), dVencRef.getFullYear());
-      const fat = faturasCartao.find(l => l.mesAno === keyVenc)
-               || faturasCartao.find(l => l.mesAno === keyFech);
+      // Cada barra = uma fatura (pelo mês do vencimento)
+      const dVencRef = new Date(yyFat, (mmFat - 1) - i, 1);
+      const keyVenc = mesAnoStr(dVencRef.getMonth(), dVencRef.getFullYear());
+      // Valor = soma créditos neste mesAno para o cartão
+      const lancsRef = allLancs.filter(l => l.mesAno === keyVenc && !l.autoFatura);
+      let valorRef = 0;
+      lancsRef.filter(l => l.tipo === 'credito' && l.cartaoId === c.id)
+              .forEach(l => { valorRef += Math.abs(l.valorParcela || 0); });
       histDados.push({
-        label: dRef.toLocaleDateString('pt-BR',{month:'short'}).replace('.',''),
-        valor: fat ? (fat.valor || 0) : 0,
-        key: keyFech,
-        isAtual: keyFech === mesAnoFatKey,
+        label: dVencRef.toLocaleDateString('pt-BR',{month:'short'}).replace('.',''),
+        valor: valorRef,
+        key: keyVenc,
+        isAtual: keyVenc === mesAnoFatKey,
       });
     }
     const maxVal = Math.max(...histDados.map(d=>d.valor), 1);
@@ -1815,7 +1816,7 @@ const App = (() => {
   ══════════════════════════════════════ */
   function setCfgTab(tab){
     state.cfgTab=tab;
-    ['categorias','cartoes','notif','aparencia','dados'].forEach(t=>document.getElementById('ct-'+t)?.classList.toggle('active',t===tab));
+    ['categorias','cartoes','aparencia','dados'].forEach(t=>document.getElementById('ct-'+t)?.classList.toggle('active',t===tab));
     renderPerfil();
   }
 
@@ -1824,7 +1825,6 @@ const App = (() => {
     el.innerHTML='<div class="spinner"></div>';
     if(state.cfgTab==='categorias') await renderCfgCategorias(el);
     else if(state.cfgTab==='cartoes') await renderCfgCartoes(el);
-    else if(state.cfgTab==='notif') await renderCfgNotif(el);
     else if(state.cfgTab==='aparencia') await renderCfgAparencia(el);
     else await renderCfgDados(el);
   }
@@ -1969,39 +1969,7 @@ const App = (() => {
     await DB.deleteCartao(id);state.cartoes=await DB.getCartoes();renderPerfil();toast('Cartão excluído','info');
   }
 
-  async function renderCfgNotif(el){
-    const cfg={
-      cartao:await DB.getConfig('notif_cartao',true),cartao_dias:await DB.getConfig('notif_cartao_dias',3),
-      orcamento:await DB.getConfig('notif_orcamento',true),orcamento_pct:await DB.getConfig('notif_orcamento_pct',80),
-      resumo:await DB.getConfig('notif_resumo',true),semdata:await DB.getConfig('notif_semdata',true),fixos:await DB.getConfig('notif_fixos',true),
-    };
-    const row=(key,title,sub)=>`<div class="list-item" onclick="App._togglePanel('notif-panel-${key}')">
-      <div class="list-info"><div class="list-title">${title}</div><div class="list-sub">${sub}</div></div>
-      <div class="list-right"><div class="toggle ${cfg[key]?'on':''}" id="notif-toggle-${key}" onclick="event.stopPropagation();App._toggleNotif('${key}',this)">
-        <div class="toggle-thumb" style="left:${cfg[key]?'20px':'2px'}"></div></div></div></div>`;
-    el.innerHTML=`<div class="card">
-      ${row('cartao','Vencimento do cartão','Aviso antes da fatura vencer')}
-      <div class="detail-panel" id="notif-panel-cartao"><div class="detail-row"><span class="detail-label">Dias antes</span>
-        <input class="detail-input" type="number" value="${cfg.cartao_dias}" min="1" max="10" onchange="DB.setConfig('notif_cartao_dias',parseInt(this.value))"></div></div>
-      ${row('orcamento','Alerta de orçamento','Aviso ao atingir % dos gastos')}
-      <div class="detail-panel" id="notif-panel-orcamento"><div class="detail-row"><span class="detail-label">Alertar em</span>
-        <select class="detail-select" onchange="DB.setConfig('notif_orcamento_pct',parseInt(this.value))">
-          ${[70,80,90,100].map(p=>`<option value="${p}" ${cfg.orcamento_pct===p?'selected':''}>${p}%</option>`).join('')}
-        </select></div></div>
-      ${row('resumo','Resumo mensal','Balanço no início do mês')}
-      <div class="detail-panel" id="notif-panel-resumo" style="padding:10px 16px"><span style="font-size:12px;color:var(--text3)">Enviado no dia 2 de cada mês</span></div>
-      ${row('semdata','Entradas sem data','Lembrete no fim do mês')}
-      <div class="detail-panel" id="notif-panel-semdata" style="padding:10px 16px"><span style="font-size:12px;color:var(--text3)">Enviado no dia 28 de cada mês</span></div>
-      ${row('fixos','Gastos fixos não pagos','Lembrete no fim do mês')}
-      <div class="detail-panel" id="notif-panel-fixos" style="padding:10px 16px"><span style="font-size:12px;color:var(--text3)">Enviado no dia 28 de cada mês</span></div>
-    </div><div style="height:8px"></div>`;
-  }
 
-  function _togglePanel(id){document.getElementById(id)?.classList.toggle('open');}
-  async function _toggleNotif(key,el){
-    el.classList.toggle('on');el.querySelector('.toggle-thumb').style.left=el.classList.contains('on')?'20px':'2px';
-    await DB.setConfig('notif_'+key,el.classList.contains('on'));
-  }
 
   async function renderCfgAparencia(el){
     const tema=await DB.getConfig('tema','dark');
@@ -2041,12 +2009,11 @@ const App = (() => {
         <div class="section-label" style="padding:0;margin-bottom:12px">Banco de dados</div>
         <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:0.5px solid var(--border)"><span style="font-size:13px;color:var(--text2)">Total de lançamentos</span><span style="font-size:13px;font-family:'DM Mono',monospace">${allLancs.length}</span></div>
         <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:0.5px solid var(--border)"><span style="font-size:13px;color:var(--text2)">Meses com dados</span><span style="font-size:13px;font-family:'DM Mono',monospace">${meses.length}</span></div>
-        <div style="display:flex;justify-content:space-between;padding:6px 0"><span style="font-size:13px;color:var(--text2)">Período</span><span style="font-size:13px;font-family:'DM Mono',monospace">${meses.length>0?meses[0]+' – '+meses[meses.length-1]:'—'}</span></div>
+        <div style="display:flex;justify-content:space-between;padding:6px 0"><span style="font-size:13px;color:var(--text2)">Período</span><span style="font-size:13px;font-family:'DM Mono',monospace">${meses.length>0?(()=>{const [mm0,yy0]=meses[0].split('-');const [mmN,yyN]=meses[meses.length-1].split('-');return MONTHS_SHORT[parseInt(mm0)-1]+'/'+yy0.slice(2)+' – '+MONTHS_SHORT[parseInt(mmN)-1]+'/'+yyN.slice(2);})():'—'}</span></div>
       </div>
       <button class="action-btn success" onclick="App._exportar()"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Exportar backup (JSON)</button>
       <button class="action-btn secondary" onclick="document.getElementById('import-input').click()"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>Importar backup (JSON)</button>
       <input type="file" id="import-input" accept=".json" style="display:none" onchange="App._importar(this)">
-      <button class="action-btn secondary" onclick="App.gotoScreen('screen-sheets')"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>Importar do Google Sheets</button>
       <div style="height:8px"></div><div class="divider-line" style="margin:0 20px 8px"></div>
       <button class="action-btn danger" onclick="App._limpar()"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>Apagar todos os dados</button>
       <div class="version-tag">Finanças App · v3.0.0<br>Dados armazenados localmente neste dispositivo</div>
@@ -2345,124 +2312,7 @@ const App = (() => {
   /* ══════════════════════════════════════
      INIT
   ══════════════════════════════════════ */
-  function renderSheetsScreen() {
-    const el = document.getElementById('sheets-content');
-    if (!el) return;
 
-    if (Sheets.isAuthenticated()) {
-      el.innerHTML = `
-        <div style="text-align:center;padding:24px 0 20px">
-          <div style="font-size:40px;margin-bottom:12px">✅</div>
-          <div style="font-size:17px;font-weight:600;margin-bottom:6px">Conectado ao Google</div>
-          <div style="font-size:13px;color:var(--text2)">Autorização ativa para leitura do Sheets</div>
-        </div>
-        <div class="field">
-          <div class="field-label">URL da planilha</div>
-          <input type="url" id="sheets-url" placeholder="https://docs.google.com/spreadsheets/d/..."
-            style="font-size:13px" value="${localStorage.getItem('last_sheets_url')||''}">
-          <div style="font-size:11px;color:var(--text3);margin-top:6px">Cole a URL da sua planilha do Google Sheets</div>
-        </div>
-        <div id="sheets-preview" style="display:none;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--rs);padding:14px;margin-bottom:16px">
-          <div style="font-size:13px;color:var(--text2)" id="sheets-preview-text"></div>
-        </div>
-        <div id="sheets-progress" style="display:none;margin-bottom:16px">
-          <div style="background:var(--bg3);border-radius:var(--rs);padding:14px">
-            <div style="font-size:13px;color:var(--text2);margin-bottom:10px" id="sheets-progress-msg">Processando...</div>
-            <div style="height:6px;background:var(--bg4);border-radius:3px;overflow:hidden">
-              <div id="sheets-progress-bar" style="height:100%;width:0%;background:var(--accent);border-radius:3px;transition:width 0.3s"></div>
-            </div>
-          </div>
-        </div>
-        <div id="sheets-log" style="display:none;background:var(--bg3);border-radius:var(--rs);padding:14px;margin-bottom:16px;max-height:200px;overflow-y:auto">
-          <div style="font-size:10px;color:var(--text3);letter-spacing:0.5px;text-transform:uppercase;margin-bottom:8px">Log de importação</div>
-          <div id="sheets-log-text" style="font-size:12px;color:var(--text2);font-family:'DM Mono',monospace;white-space:pre-wrap;line-height:1.6"></div>
-        </div>
-        <button class="action-btn primary" id="sheets-import-btn" onclick="App.sheetsImportar()">
-          <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          Importar dados
-        </button>
-        <button class="action-btn secondary" onclick="App.sheetsLogout()">Desconectar do Google</button>
-        <div style="font-size:11px;color:var(--text3);text-align:center;margin-top:12px;line-height:1.6">
-          A importação não apaga seus dados existentes.<br>Lançamentos duplicados podem aparecer se importar mais de uma vez.
-        </div>
-        <div style="height:20px"></div>`;
-    } else {
-      el.innerHTML = `
-        <div style="text-align:center;padding:32px 0 24px">
-          <div style="font-size:48px;margin-bottom:16px">📊</div>
-          <div style="font-size:18px;font-weight:600;margin-bottom:10px;letter-spacing:-0.3px">Migrar do Google Sheets</div>
-          <div style="font-size:14px;color:var(--text2);line-height:1.6;max-width:300px;margin:0 auto">
-            Importe todo o seu histórico financeiro de uma vez. Após isso, o app funciona de forma independente.
-          </div>
-        </div>
-        <div style="background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--rs);padding:16px;margin-bottom:20px">
-          <div style="font-size:13px;font-weight:500;margin-bottom:8px">O que será importado:</div>
-          <div style="font-size:13px;color:var(--text2);line-height:1.8">
-            ✅ Entradas e gastos de Agosto 2024 até hoje<br>
-            ✅ Gastos fixos com status pago/não pago<br>
-            ✅ Compras no crédito (Nubank, Itaú, C6)<br>
-            ✅ Saldos iniciais de cada mês<br>
-            ✅ Categorias mapeadas automaticamente
-          </div>
-        </div>
-        <button class="action-btn primary" onclick="App.sheetsLogin()">
-          <svg viewBox="0 0 24 24"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
-          Conectar com Google
-        </button>
-        <div style="font-size:11px;color:var(--text3);text-align:center;margin-top:12px;line-height:1.6">
-          Usamos OAuth 2.0. Apenas leitura — nunca modificamos sua planilha.
-        </div>
-        <div style="height:20px"></div>`;
-    }
-  }
-
-  function sheetsLogin() { Sheets.startOAuth(); }
-  function sheetsLogout() { Sheets.logout(); renderSheetsScreen(); }
-
-  async function sheetsImportar() {
-    const urlEl = document.getElementById('sheets-url');
-    const url = urlEl?.value?.trim();
-    if (!url) { toast('Cole a URL da planilha', 'err'); return; }
-    const id = Sheets.extractSpreadsheetId(url);
-    if (!id) { toast('URL inválida — cole a URL completa do Google Sheets', 'err'); return; }
-    localStorage.setItem('last_sheets_url', url);
-
-    const btn = document.getElementById('sheets-import-btn');
-    const progEl = document.getElementById('sheets-progress');
-    const progMsg = document.getElementById('sheets-progress-msg');
-    const progBar = document.getElementById('sheets-progress-bar');
-    const logEl = document.getElementById('sheets-log');
-    const logText = document.getElementById('sheets-log-text');
-
-    if (btn) btn.disabled = true;
-    if (progEl) progEl.style.display = '';
-    if (logEl) logEl.style.display = '';
-
-    try {
-      const result = await Sheets.importar(id, (p) => {
-        if (progMsg) progMsg.textContent = p.msg;
-        if (progBar && p.progress) progBar.style.width = (p.progress * 100).toFixed(0) + '%';
-        if (logText) logText.textContent = Sheets.log.join('\n');
-      });
-
-      if (progBar) progBar.style.width = '100%';
-      if (progMsg) progMsg.textContent = `✅ ${result.total} lançamentos importados de ${result.meses} meses!`;
-      if (logText) logText.textContent = Sheets.log.join('\n');
-
-      // Recarregar dados
-      state.categorias = await DB.getCategorias();
-      state.cartoes = await DB.getCartoes();
-      state.lancamentos = await DB.getLancamentos(mesAnoStr(state.currentMonth, state.currentYear));
-
-      toast(`Importação concluída! ${result.total} lançamentos`, 'ok', 4000);
-    } catch(e) {
-      if (progMsg) progMsg.textContent = '❌ Erro: ' + e.message;
-      toast('Erro na importação: ' + e.message, 'err', 5000);
-      console.error(e);
-    } finally {
-      if (btn) btn.disabled = false;
-    }
-  }
 
 
   async function migrarDataFaturas() {
@@ -2497,6 +2347,39 @@ const App = (() => {
     localStorage.setItem('migr_fatura_debito_v2', '1');
   }
 
+  async function migrarParcelasParaRegraOficial() {
+    const jaRodou = localStorage.getItem('migr_parcelas_regra_v1');
+    if (jaRodou) return;
+    const allLancs = await DB.getAllLancamentos();
+    const creditos = allLancs.filter(l => l.tipo === 'credito' && l.cartaoId && l.dataCompra);
+    let count = 0;
+    // Agrupa por grupoId para processar cada compra
+    const grupos = {};
+    creditos.forEach(l => { if (l.grupoId) { if (!grupos[l.grupoId]) grupos[l.grupoId] = []; grupos[l.grupoId].push(l); } });
+    for (const [grupoId, parcelas] of Object.entries(grupos)) {
+      parcelas.sort((a, b) => (a.parcela || 0) - (b.parcela || 0));
+      const primeira = parcelas[0];
+      const cartao = getCartaoById(primeira.cartaoId);
+      if (!cartao) continue;
+      const dataC = primeira.dataCompra || primeira.data;
+      if (!dataC) continue;
+      const dCompra = new Date(dataC + 'T12:00:00');
+      const { dMesBase } = calcMesAnoFatura(dCompra, cartao.fechamento || 5, cartao.vencimento || 10);
+      for (let i = 0; i < parcelas.length; i++) {
+        const p = parcelas[i];
+        const dParcela = new Date(dMesBase);
+        dParcela.setMonth(dParcela.getMonth() + i);
+        const novoMesAno = mesAnoStr(dParcela.getMonth(), dParcela.getFullYear());
+        if (p.mesAno !== novoMesAno) {
+          await DB.updateLancamento({ ...p, mesAno: novoMesAno });
+          count++;
+        }
+      }
+    }
+    console.log('[migração parcelas v1] ' + count + ' parcelas atualizadas');
+    localStorage.setItem('migr_parcelas_regra_v1', '1');
+  }
+
   async function init(){
     await DB.open();
     await DB.seedDefaults();
@@ -2507,16 +2390,8 @@ const App = (() => {
     await migrarFaturasParaDebito();
     // Migração: preencher data das faturas automáticas com dia de vencimento do cartão
     await migrarDataFaturas();
-    // Verificar se voltou do OAuth do Google
-    if (Sheets.handleOAuthCallback()) {
-      toast('Conectado ao Google com sucesso!', 'ok');
-      await loadData();
-      for(const c of state.cartoes) await atualizarFaturaFixa(c.id);
-      await loadData();
-      gotoScreen('screen-sheets', false);
-      renderSheetsScreen();
-      return;
-    }
+    // Migração: recalcular mesAno das parcelas de crédito pela regra oficial
+    await migrarParcelasParaRegraOficial();
     await loadData();
     // Recalcular faturas automáticas para todos os cartões
     for(const c of state.cartoes) await atualizarFaturaFixa(c.id);
@@ -2915,7 +2790,6 @@ const App = (() => {
     openModal,closeModal,_selColor,_onCustomColor,
     _saveCategoria,_saveSubcat,_saveCartao,
     init,
-    renderSheetsScreen, sheetsLogin, sheetsLogout, sheetsImportar,
   };
 })();
 App.init();

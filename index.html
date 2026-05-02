@@ -39,9 +39,9 @@
   --orange-dim:#fb923c22;
   --purple:#a78bfa;
   --purple-dim:#a78bfa22;
-  --accent:#7c6af7;
-  --accent2:#9f94f8;
-  --accent-dim:#7c6af722;
+  --accent:#2d9e8f;
+  --accent2:#3dbfae;
+  --accent-dim:#2d9e8f22;
   --r:16px;--rs:10px;--rxs:7px;
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
@@ -69,9 +69,9 @@ body.light-mode{
   --orange-dim:#ea580c18;
   --purple:#7c3aed;
   --purple-dim:#7c3aed18;
-  --accent:#6d5ef5;
-  --accent2:#7c6af7;
-  --accent-dim:#6d5ef518;
+  --accent:#1a8f80;
+  --accent2:#2d9e8f;
+  --accent-dim:#1a8f8018;
 }
 html, body{
   height:100%;
@@ -768,7 +768,7 @@ select option{background:var(--bg3)}
   width:48px;height:48px;border-radius:50%;
   background:var(--accent);
   display:flex;align-items:center;justify-content:center;
-  box-shadow:0 2px 16px #7c6af760;
+  box-shadow:0 2px 16px #2d9e8f60;
   transition:all 0.2s;
   margin-bottom:2px;
 }
@@ -880,14 +880,6 @@ select option{background:var(--bg3)}
     </div>
     <div class="cartao-chips" id="h-cartoes"></div>
 
-    <div class="divider-line"></div>
-
-    <!-- últimos lançamentos -->
-    <div class="section-label" style="display:flex;justify-content:space-between;align-items:center;padding-right:20px">
-      <span>Últimos lançamentos</span>
-      <span style="font-size:11px;color:var(--accent2);cursor:pointer" onclick="App.gotoScreen('screen-lancamentos')">Ver todos</span>
-    </div>
-    <div class="feed-list" id="h-feed"></div>
     <div style="height:8px"></div>
   </div>
 </div>
@@ -1000,7 +992,6 @@ select option{background:var(--bg3)}
   <div class="seg-ctrl" style="flex-shrink:0">
     <button class="seg-btn active" onclick="App.setCfgTab('categorias')" id="ct-categorias">Categorias</button>
     <button class="seg-btn" onclick="App.setCfgTab('cartoes')" id="ct-cartoes">Cartões</button>
-    <button class="seg-btn" onclick="App.setCfgTab('notif')" id="ct-notif">Notificações</button>
     <button class="seg-btn" onclick="App.setCfgTab('aparencia')" id="ct-aparencia">Aparência</button>
     <button class="seg-btn" onclick="App.setCfgTab('dados')" id="ct-dados">Dados</button>
   </div>
@@ -1012,20 +1003,7 @@ select option{background:var(--bg3)}
 
 <!-- NAV BAR -->
 
-<!-- ══════════════════════════════════════
-     SCREEN: GOOGLE SHEETS
-══════════════════════════════════════ -->
-<div class="screen" id="screen-sheets">
-  <div class="page-header">
-    <button class="back-btn" onclick="App.goBack()">
-      <svg viewBox="0 0 24 24"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
-    </button>
-    <span class="page-title">Importar do Sheets</span>
-  </div>
-  <div class="scroll-area">
-    <div style="padding:0 20px" id="sheets-content">
-      <!-- renderizado pelo JS -->
-    </div>
+
   </div>
 </div>
 
@@ -1073,7 +1051,6 @@ select option{background:var(--bg3)}
 </div><!-- #app -->
 
 <script src="db.js"></script>
-<script src="sheets.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
