@@ -18,7 +18,7 @@ const App = (() => {
     editingId: null,
     cartaoFiltro: null,
     parcFiltroCartao: null,
-    parcFiltroCat: null,
+    parcCatFilter: [],
     parcImpactoVisible: true,
     parcAbertos: new Set(),
     lancamentos: [],
@@ -2349,10 +2349,17 @@ const App = (() => {
 
     // Filtros
     const filtCartao = state.parcFiltroCartao;
-    const filtCat = state.parcFiltroCat;
+    const filtCat = state.parcCatFilter;
     const comprasFiltradas = compras.filter(c => {
       if (filtCartao && c.cartaoId !== filtCartao) return false;
-      if (filtCat && c.categoriaId !== filtCat) return false;
+      if (filtCat.length) {
+        const primeira2 = Object.values(grupos).find(g=>g[0]?.grupoId===c.grupoId)?.[0]
+                        || creditos.find(l=>l.grupoId===c.grupoId);
+        const subcat = primeira2?.subcat || null;
+        const hasCat  = filtCat.some(f=>f.type==='cat'&&f.id===c.categoriaId);
+        const hasSub  = filtCat.some(f=>f.type==='subcat'&&f.catId===c.categoriaId&&f.nome===subcat);
+        if (!hasCat && !hasSub) return false;
+      }
       return true;
     });
 
@@ -2375,17 +2382,15 @@ const App = (() => {
     ].join('');
 
     // ── Chips categoria ──────────────────
-    const catsComParc = [...new Set(compras.map(c=>c.categoriaId))]
-      .map(id => state.categorias.find(c=>c.id===id)).filter(Boolean);
-    const chipsCatHtml = [
-      `<div class="parc-chip-filtro ${!filtCat?'ativo':''}" onclick="App._parcFiltroCat(null)">Todas cats</div>`,
-      ...catsComParc.map(c => {
-        const ativo = filtCat === c.id;
-        return `<div class="parc-chip-filtro ${ativo?'ativo':''}" onclick="App._parcFiltroCat(${c.id})">
-          ${c.emoji||'📦'} ${c.nome}
-        </div>`;
-      })
-    ].join('');
+    const filtCatAtivo = state.parcCatFilter.length > 0;
+    const filtCatLabels = state.parcCatFilter.map(f=>f.label).join(', ');
+    const chipsCatHtml = `<div style="display:flex;align-items:center;gap:8px">
+      <div class="parc-chip-filtro ${filtCatAtivo?'ativo':''}" onclick="App._abrirFiltroCatParc()" style="${filtCatAtivo?'border-color:var(--accent);color:var(--accent);background:var(--accent)12':''}">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+        ${filtCatAtivo ? filtCatLabels : 'Categoria'}
+      </div>
+      ${filtCatAtivo?`<div class="parc-chip-filtro" onclick="App._limparFiltCatParc()" style="padding:4px 8px;font-size:11px;color:var(--text3)">✕ limpar</div>`:''}
+    </div>`;
 
     // ── Cards resumo ─────────────────────
     const totalComprometido = abertas.reduce((s,c)=>s+c.totalCompra,0);
@@ -2544,7 +2549,78 @@ const App = (() => {
     }
   }
   function _parcFiltroCartao(id) { state.parcFiltroCartao = id; _reRenderParc(); }
-  function _parcFiltroCat(id)    { state.parcFiltroCat = id;    _reRenderParc(); }
+
+  function _abrirFiltroCatParc() {
+    // Coletar todas as compras parceladas para saber quais cats/subcats existem
+    DB.getAllLancamentos().then(todos => {
+      const creditos = todos.filter(l => l.tipo === 'credito' && l.totalParcelas > 1 && l.grupoId);
+      // Map grupoId -> primeira ocorrência (para pegar subcat)
+      const primeiras = {};
+      creditos.forEach(l => { if (!primeiras[l.grupoId]) primeiras[l.grupoId] = l; });
+      const items = Object.values(primeiras);
+      // Cats com parcelas
+      const catIds = new Set(items.map(l=>l.categoriaId));
+      // Subcats com parcelas: {catId: Set<subcatNome>}
+      const subcatsByCat = {};
+      items.forEach(l => {
+        if (l.subcat) {
+          if (!subcatsByCat[l.categoriaId]) subcatsByCat[l.categoriaId] = new Set();
+          subcatsByCat[l.categoriaId].add(l.subcat);
+        }
+      });
+
+      const content = document.getElementById('modal-content');
+      const renderModal = () => {
+        let html = `<div class="modal-title">Filtrar por categoria</div>`;
+        for (const cat of state.categorias) {
+          if (!catIds.has(cat.id)) continue;
+          const catSel = state.parcCatFilter.some(f=>f.type==='cat'&&f.id===cat.id);
+          html += `<div style="margin-bottom:4px">
+            <div style="padding:10px 0;display:flex;align-items:center;gap:10px;cursor:pointer" onclick="App._toggleFiltCatParc('cat',${cat.id},null,'${cat.nome}')">
+              <div style="width:18px;height:18px;border-radius:4px;border:1.5px solid ${catSel?'var(--accent)':'var(--border2)'};background:${catSel?'var(--accent)':'transparent'};display:flex;align-items:center;justify-content:center;flex-shrink:0">
+                ${catSel?'<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>':''}
+              </div>
+              <span style="font-size:16px">${cat.emoji}</span>
+              <span style="flex:1;font-size:14px;font-weight:500">${cat.nome}</span>
+            </div>`;
+          // Subcats que têm parcelas nessa cat
+          const subcatsComParc = subcatsByCat[cat.id] || new Set();
+          (cat.subcats||[]).filter(s=>typeof s==='object' && subcatsComParc.has(s.nome)).forEach(s => {
+            const subSel = state.parcCatFilter.some(f=>f.type==='subcat'&&f.catId===cat.id&&f.nome===s.nome);
+            html += `<div style="padding:6px 0 6px 28px;display:flex;align-items:center;gap:10px;cursor:pointer" onclick="App._toggleFiltCatParc('subcat',${cat.id},'${s.nome}','${s.nome}')">
+              <div style="width:16px;height:16px;border-radius:4px;border:1.5px solid ${subSel?'var(--accent)':'var(--border2)'};background:${subSel?'var(--accent)':'transparent'};display:flex;align-items:center;justify-content:center;flex-shrink:0">
+                ${subSel?'<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>':''}
+              </div>
+              <span style="font-size:14px">${s.emoji||'•'}</span>
+              <span style="font-size:13px;color:var(--text2)">${s.nome}</span>
+            </div>`;
+          });
+          html += `</div>`;
+        }
+        html += `<div class="modal-btns"><button class="btn-save" onclick="App.closeModal();App._reRenderParc()">Aplicar</button></div>`;
+        content.innerHTML = html;
+      };
+      // Expor renderModal para o toggle re-abrir
+      App._renderModalCatParc = renderModal;
+      renderModal();
+      document.getElementById('modal-overlay').classList.add('open');
+    });
+  }
+
+  function _toggleFiltCatParc(type, catId, subcatNome, label) {
+    if (type === 'cat') {
+      const idx = state.parcCatFilter.findIndex(f=>f.type==='cat'&&f.id===catId);
+      if (idx >= 0) state.parcCatFilter.splice(idx, 1);
+      else state.parcCatFilter.push({type:'cat', id:catId, label});
+    } else {
+      const idx = state.parcCatFilter.findIndex(f=>f.type==='subcat'&&f.catId===catId&&f.nome===subcatNome);
+      if (idx >= 0) state.parcCatFilter.splice(idx, 1);
+      else state.parcCatFilter.push({type:'subcat', catId, nome:subcatNome, label});
+    }
+    if (App._renderModalCatParc) App._renderModalCatParc();
+  }
+
+  function _limparFiltCatParc() { state.parcCatFilter = []; _reRenderParc(); }
   function _parcToggleItem(grupoId) {
     if (state.parcAbertos.has(grupoId)) state.parcAbertos.delete(grupoId);
     else state.parcAbertos.add(grupoId);
@@ -2555,7 +2631,7 @@ const App = (() => {
   return {
     gotoScreen,goBack,novoLancamento,changeMonth,
     renderHome,renderLancamentos,renderRelatorios,renderPerfil,
-    renderParcelamentos,_parcFiltroCartao,_parcFiltroCat,_parcToggleItem,_parcToggleImpacto,
+    renderParcelamentos,_parcFiltroCartao,_abrirFiltroCatParc,_toggleFiltCatParc,_limparFiltCatParc,_parcToggleItem,_parcToggleImpacto,
     setLancTab,setLancSubTab,editLancamento,toggleFixoPago,
     abrirCartao,abrirFiltroCategoria,_toggleFiltroItem,limparFiltroCategoria,
     setTipoLanc,_maskMoney,_selCat,_selSubcat,_selPay,_selCartao,_updateParcelas,
