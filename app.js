@@ -40,21 +40,121 @@ const App = (() => {
   function mesAnoLt(a, b) { return mesAnoNum(a) < mesAnoNum(b); }  // a < b
   function mesAnoGt(a, b) { return mesAnoNum(a) > mesAnoNum(b); }  // a > b
 
-  // Retorna a data de vencimento da fatura do cartão para um dado mesAno de parcela.
-  // Ex: parcela "04-2026" do Nubank (fecha 4, vence 11) → vence 11/Mai/2026
+  // ──────────────────────────────────────────────────────────────────
+  // REGRA OFICIAL DA FATURA (FinApp)
+  // ──────────────────────────────────────────────────────────────────
+  // A fatura "mesAnoV" (nome = MêsV/anoV) tem:
+  //   • PERÍODO DE GASTOS: do dia diaF/mesAnoV-1 até dia (diaF-1)/mesAnoV
+  //     (início = data de fechamento da fatura ANTERIOR; fim = véspera do diaF do próprio mesAnoV)
+  //   • DATA DE VENCIMENTO: diaV/mesAnoV
+  //
+  // Exemplos (diaF=4, diaV=11):
+  //   • Fatura "Mai/26": período 04/04/26 a 03/05/26, vence 11/05/26
+  //   • Fatura "Jun/26": período 04/05/26 a 03/06/26, vence 11/06/26
+  //
+  // Compra em data dCompra entra na fatura cujo período inclui dCompra:
+  //   • Se diaCompra >= diaF → fatura mesV = mês da compra + 1
+  //   • Se diaCompra <  diaF → fatura mesV = mês da compra
+  //
+  // Fatura ATUAL = aquela cujo período inclui hoje (mesma regra de cima com hoje).
+  //
+  // No banco: l.mesAno e l.mesPagamento guardam o "mesV/anoV" da fatura (mês do vencimento).
+  // ──────────────────────────────────────────────────────────────────
+
+  // ──────────────────────────────────────────────────────────────────
+  // REGRA OFICIAL DA FATURA (FinApp) — REVISADA
+  // ──────────────────────────────────────────────────────────────────
+  // diaF e diaV são fixos por cartão.
+  // Para uma fatura que vence em dataV = diaV/mesV/anoV:
+  //   • FIM    = primeira data com dia=diaF-1 ANTERIOR a dataV
+  //              (andando para trás a partir de dataV)
+  //   • INÍCIO = primeira data com dia=diaF ANTERIOR ao FIM
+  //
+  // Exemplos:
+  //   • diaF=4, diaV=11, fatura "Mai/26" (vence 11/05/26):
+  //       FIM    = 03/05/26   (primeiro 03 antes de 11/05)
+  //       INÍCIO = 04/04/26   (primeiro 04 antes de 03/05)
+  //   • diaF=22, diaV=1, fatura "Jan/27" (vence 01/01/27):
+  //       FIM    = 21/12/26   (primeiro 21 antes de 01/01/27)
+  //       INÍCIO = 22/11/26   (primeiro 22 antes de 21/12/26)
+  //
+  // Compra cai na fatura cujo período INÍCIO..FIM inclui a data da compra.
+  // ──────────────────────────────────────────────────────────────────
+
+  // Auxiliar: retorna a primeira data com `dia` que é estritamente ANTERIOR à dRef
+  function _primeiraDataAntesEstrito(dia, dRef) {
+    let m = dRef.getMonth();
+    let y = dRef.getFullYear();
+    let cand = new Date(y, m, dia);
+    if (cand >= dRef) {
+      // candidata desse mês não é estritamente anterior — usa mês anterior
+      cand = new Date(y, m - 1, dia);
+    }
+    return cand;
+  }
+
+  // Auxiliar: retorna a primeira data com `dia` que é estritamente POSTERIOR à dRef
+  function _primeiraDataDepoisEstrito(dia, dRef) {
+    let m = dRef.getMonth();
+    let y = dRef.getFullYear();
+    let cand = new Date(y, m, dia);
+    if (cand <= dRef) {
+      cand = new Date(y, m + 1, dia);
+    }
+    return cand;
+  }
+
+  // Dada uma fatura mesAnoV (ano/mês do vencimento), retorna {dInicio, dFim, dVenc}
+  function periodoFatura(mesAnoV, cartao) {
+    const diaF = cartao?.fechamento || 5;
+    const diaV = cartao?.vencimento || 10;
+    const [mmV, yyV] = mesAnoV.split('-').map(Number); // mmV 1-based
+    const dVenc = new Date(yyV, mmV - 1, diaV);
+    // FIM = primeira data (diaF-1) ANTERIOR a dVenc
+    const dFim = _primeiraDataAntesEstrito(diaF - 1, dVenc);
+    // INÍCIO = primeira data (diaF) ANTERIOR a dFim
+    const dInicio = _primeiraDataAntesEstrito(diaF, dFim);
+    return { dInicio, dFim, dVenc };
+  }
+
+  // Dada uma data (compra ou hoje), retorna a fatura {mmV, yyV, mesAnoV} cujo período inclui essa data
+  function faturaDeData(dRef, cartao) {
+    const diaF = cartao?.fechamento || 5;
+    const diaV = cartao?.vencimento || 10;
+    // Algoritmo: a próxima data diaF estritamente posterior a dRef é o início da PRÓXIMA fatura.
+    // Logo, FIM da nossa fatura = (próxima diaF) - 1 dia.
+    // dVenc = primeira data diaV estritamente posterior ao nosso FIM.
+    // Normalizar dRef para zerar hora (evitar problemas de comparação)
+    const dCompra = new Date(dRef.getFullYear(), dRef.getMonth(), dRef.getDate());
+    const dProxFech = _primeiraDataDepoisEstrito(diaF, dCompra);
+    const dFim = new Date(dProxFech.getFullYear(), dProxFech.getMonth(), dProxFech.getDate() - 1);
+    const dVenc = _primeiraDataDepoisEstrito(diaV, dFim);
+    const mmV = dVenc.getMonth() + 1;
+    const yyV = dVenc.getFullYear();
+    return { mmV, yyV, mesAnoV: mesAnoStr(mmV - 1, yyV) };
+  }
+
+  // Retorna a fatura ATUAL do cartão (a que inclui hoje)
+  function faturaAtual(cartao) {
+    return faturaDeData(new Date(), cartao);
+  }
+
+  // Retorna a data de vencimento da fatura cujo nome (mesAno) é dado
   function dataVencFatura(mesAno, cartao) {
     if (!cartao) return null;
-    const [mm, yy] = mesAno.split('-').map(Number);
-    const m = mm - 1; // 0-based
-    const fechamento = cartao.fechamento || 5;
-    const vencimento = cartao.vencimento || 10;
-    // Se vencimento > fechamento → vence no mesmo mês da parcela
-    // Se vencimento <= fechamento → vence no mês seguinte
-    if (vencimento > fechamento) {
-      return new Date(yy, m, vencimento);
-    } else {
-      return new Date(yy, m + 1, vencimento);
-    }
+    return periodoFatura(mesAno, cartao).dVenc;
+  }
+
+  // Compatibilidade: retorna { dMesBase, dFech, dVenc } para a fatura onde a compra entra
+  //   • dMesBase = primeiro dia do mesV da fatura (referência para iterar parcelas)
+  //   • dFech    = data do FIM do período (último dia da fatura) — exibido como "Fechamento"
+  //   • dVenc    = data de vencimento
+  function calcMesAnoFatura(dCompra, fechamento, vencimento) {
+    const cartaoFake = { fechamento, vencimento };
+    const { mmV, yyV, mesAnoV } = faturaDeData(dCompra, cartaoFake);
+    const { dFim, dVenc } = periodoFatura(mesAnoV, cartaoFake);
+    const dMesBase = new Date(yyV, mmV - 1, 1);
+    return { dMesBase, dFech: dFim, dVenc };
   }
 
   // Uma parcela é considerada paga se o lançamento de fatura do cartão
@@ -138,41 +238,8 @@ const App = (() => {
   //   1) mesAnoFechamento: se diaFechamento <= diaCompra → mês da compra; senão → mês anterior
   //   2) mesAnoVencimento: se diaVencimento > diaFechamento → mesmo mês do fechamento; senão → mês seguinte
   //   3) mesAnoFatura (tela): se vencimento == compra+1 → mês da compra; se vencimento == compra+2 → mês da compra+1
-  // Retorna { dMesBase, mesAnoVencimento, offsetVencimento }
-  // Calcula em qual fatura (mesAno) uma compra entra, pela regra oficial:
-  // A primeira parcela entra na fatura cuja dataF é a primeira ANTERIOR OU IGUAL à dataCompra.
-  // Ou seja: encontra a dataF <= dataCompra mais recente.
-  // Nome da fatura = mesV/anoV (mês do vencimento, que é mês seguinte ao fechamento)
-  // mesAno salvo = mesAno do NOME da fatura = mês do vencimento
-  function calcMesAnoFatura(dCompra, fechamento, vencimento) {
-    const diaCompra = dCompra.getDate();
-    const mCompra   = dCompra.getMonth();   // 0-based
-    const yCompra   = dCompra.getFullYear();
+  // (LÓGICA OBSOLETA — substituída pelas funções faturaDeData/periodoFatura/calcMesAnoFatura no topo do arquivo)
 
-    // Fatura ATUAL = aquela com primeira dataF anterior ou IGUAL à dataCompra
-    // → Se diaF <= diaCompra: dataF está neste mesmo mês → usa este mês como mesF
-    // → Se diaF >  diaCompra: dataF já passou, estava no mês anterior → usa mês anterior
-    let mFech, yFech;
-    if (fechamento <= diaCompra) {
-      mFech = mCompra;
-      yFech = yCompra;
-    } else {
-      // fechamento ainda não chegou este mês → última dataF foi mês passado
-      const dPrev = new Date(yCompra, mCompra - 1, fechamento);
-      mFech = dPrev.getMonth();
-      yFech = dPrev.getFullYear();
-    }
-    const dFech = new Date(yFech, mFech, fechamento);
-
-    // Vencimento: sempre mês seguinte ao fechamento, no diaV
-    // mesV = mesF + 1 (jan do próximo ano se mesF = dez)
-    const dVenc = new Date(yFech, mFech + 1, vencimento);
-
-    // mesAno salvo = mês do vencimento (nome da fatura = "MêsV/anoV")
-    const dMesBase = new Date(dVenc.getFullYear(), dVenc.getMonth(), 1);
-
-    return { dMesBase, dFech, dVenc };
-  }
   function getCatEmoji(l) {
     const cat = getCatById(l.categoriaId);
     if (!cat) return l.tipo==='entrada'||l.fixo ? '💰' : '💸';
@@ -393,27 +460,16 @@ const App = (() => {
 
     // Cartões — mostra FATURA ATUAL (independente do mês selecionado)
     const allLancsHome = await DB.getAllLancamentos();
-    const hoje = new Date();
     const cartaoEl = document.getElementById('h-cartoes');
     cartaoEl.innerHTML = state.cartoes.map(c=>{
-      // Calcular fatura atual do cartão: primeira dataF anterior ou igual a hoje
-      const diaF = c.fechamento || 5;
-      const diaV = c.vencimento || 10;
-      const diaHoje = hoje.getDate();
-      let mFech, yFech;
-      if (diaF <= diaHoje) {
-        mFech = hoje.getMonth(); yFech = hoje.getFullYear();
-      } else {
-        const dPrev = new Date(hoje.getFullYear(), hoje.getMonth() - 1, diaF);
-        mFech = dPrev.getMonth(); yFech = dPrev.getFullYear();
-      }
-      const dFechAtual = new Date(yFech, mFech, diaF);
-      const dVencAtual = new Date(yFech, mFech + 1, diaV);
-      // mesAno da fatura = mês do vencimento
-      const mesAnoFat = mesAnoStr(dVencAtual.getMonth(), dVencAtual.getFullYear());
-      // Nome: MêsV/anoVYY
-      const nomeFat = MONTHS_SHORT[dVencAtual.getMonth()] + '/' + String(dVencAtual.getFullYear()).slice(2);
-      // Calcular valor da fatura = soma de créditos cujo mesPagamento (fatura) == mesAnoFat
+      // Fatura ATUAL pela regra oficial (fatura cujo período inclui hoje)
+      const { mmV, yyV, mesAnoV: mesAnoFat } = faturaAtual(c);
+      const { dInicio, dFim, dVenc: dVencAtual } = periodoFatura(mesAnoFat, c);
+      // Para exibição: "Fechamento" = último dia do período da fatura (dFim)
+      const dFechAtual = dFim;
+      // Nome da fatura: MêsV/anoVYY
+      const nomeFat = MONTHS_SHORT[mmV - 1] + '/' + String(yyV).slice(2);
+      // Valor da fatura = soma de créditos cujo mesPagamento (fatura) == mesAnoFat
       let valorFat = 0;
       allLancsHome.filter(l => !l.autoFatura && l.tipo === 'credito' && l.cartaoId === c.id &&
                                (l.mesPagamento || l.mesAno) === mesAnoFat)
@@ -1095,23 +1151,20 @@ const App = (() => {
       const cartaoEl=document.querySelector('#cartao-grid .cat-chip.sel');
       const cartaoId=cartaoEl?parseInt(cartaoEl.dataset.cartao):state.cartoes[0]?.id;
       const cartao=getCartaoById(cartaoId);
-      const fechamento=cartao?.fechamento||5;
       const dataCompra=data||todayStr();
       const dCompra=new Date(dataCompra+'T12:00:00');
-      const diaCompra=dCompra.getDate();
       const estorno = document.getElementById('estorno-toggle')?.dataset.on === '1';
       const valorParcela=(estorno ? -1 : 1) * (valor/n);
-      // Calcular em qual fatura (mesAno/tela) esta compra entra, usando a lógica correta
-      const { dMesBase } = calcMesAnoFatura(dCompra, fechamento, cartao?.vencimento||10);
-      const mesAnoCompra = mesAnoStr(dMesBase.getMonth(), dMesBase.getFullYear());
+      // Calcular em qual fatura (mesAnoV) a primeira parcela cai, pela regra oficial
+      const { mmV: mmV1, yyV: yyV1, mesAnoV: mesAnoFat1 } = faturaDeData(dCompra, cartao);
       if(!state.editingId){
         const grupoId=Date.now();
         // mesAno = mês da COMPRA (para aparecer no mês certo na aba Lançamentos)
-        // mesPagamento = mês da FATURA (para cálculo da fatura automática)
+        // mesPagamento = mês da FATURA da parcela (mesAnoV) — primeira parcela em mesAnoFat1, depois +1 mês cada
         const mesAnoCompra = mesAnoStr(dCompra.getMonth(), dCompra.getFullYear());
         for(let i=0;i<n;i++){
-          const dParcela = new Date(dMesBase);
-          dParcela.setMonth(dParcela.getMonth()+i);
+          // i-ésima parcela: mês da fatura = mmV1 + i
+          const dParcela = new Date(yyV1, (mmV1 - 1) + i, 1);
           const maPagamento = mesAnoStr(dParcela.getMonth(), dParcela.getFullYear());
           await DB.addLancamento({
             tipo:'credito',categoriaId:catId,subcat,descricao:desc,
@@ -1126,7 +1179,7 @@ const App = (() => {
         // Atualizar gasto fixo de pagamento de fatura
         await atualizarFaturaFixa(cartaoId);
         state.lancamentos=await DB.getLancamentos(mesAno);
-        const nomeFat1 = MONTHS_SHORT[dMesBase.getMonth()]+'/'+String(dMesBase.getFullYear()).slice(2);
+        const nomeFat1 = MONTHS_SHORT[mmV1 - 1]+'/'+String(yyV1).slice(2);
         toast(`Compra salva — parcela 1 na fatura ${nomeFat1}`,'ok');
         goBack(); return;
       } else {
@@ -1471,20 +1524,13 @@ const App = (() => {
             .forEach(l => _faturasPagas.add(l.faturaCartaoId + '|' + l.mesAno));
 
     const rows = await Promise.all(state.cartoes.map(async c => {
-      // Calcular fatura atual pela regra oficial
-      const diaF = c.fechamento || 5;
-      const diaV = c.vencimento || 10;
-      const diaHoje = hoje.getDate();
-      let mFech, yFech;
-      if (diaF <= diaHoje) { mFech = hoje.getMonth(); yFech = hoje.getFullYear(); }
-      else { const dp = new Date(hoje.getFullYear(), hoje.getMonth()-1, diaF); mFech=dp.getMonth(); yFech=dp.getFullYear(); }
-      const dVencAtual = new Date(yFech, mFech + 1, diaV);
-      const mesAnoFatAtual = mesAnoStr(dVencAtual.getMonth(), dVencAtual.getFullYear());
+      // Fatura ATUAL pela regra oficial
+      const { mesAnoV: mesAnoFatAtual } = faturaAtual(c);
 
-      // Limite comprometido = soma de créditos nas faturas a partir da fatura atual
+      // Limite comprometido = soma de créditos cuja FATURA (mesPagamento) é a atual ou futuras
       const parcelasEmAberto = allLancs.filter(l =>
         !l.autoFatura && l.tipo === 'credito' && l.cartaoId === c.id &&
-        mesAnoNum(l.mesAno) >= mesAnoNum(mesAnoFatAtual)
+        mesAnoNum(l.mesPagamento || l.mesAno) >= mesAnoNum(mesAnoFatAtual)
       );
       const totalComprometido = parcelasEmAberto.reduce((s, l) => s + Math.abs(l.valorParcela || 0), 0);
 
@@ -1565,28 +1611,11 @@ const App = (() => {
     const allLancs = await DB.getAllLancamentos();
     const hoje = new Date();
 
-    // ── Calcular mesAno da fatura ATUAL corretamente ──
-    // A fatura atual é aquela cujo fechamento já passou (ou é hoje) e cujo vencimento ainda não passou.
-    // Algoritmo: encontra a data de fechamento imediatamente anterior a hoje.
-    //   Ex: hoje = 02/05, fechamento = 4  → último dia 4 foi 04/04 → mesAno = "04-2026"
-    //   Ex: hoje = 02/05, fechamento = 1  → último dia 1 foi 01/05 → mesAno = "05-2026"
-    // Regra oficial: fatura atual = aquela com dataF <= hoje mais recente
-    // mesAno salvo = mês do vencimento (= mesF + 1)
-    function _faturaAtualCartao(cartao) {
-      const diaF = cartao.fechamento || 5;
-      const diaV = cartao.vencimento || 10;
-      const diaH = hoje.getDate();
-      let mFech, yFech;
-      if (diaF <= diaH) { mFech = hoje.getMonth(); yFech = hoje.getFullYear(); }
-      else { const dp = new Date(hoje.getFullYear(), hoje.getMonth()-1, diaF); mFech=dp.getMonth(); yFech=dp.getFullYear(); }
-      const dFech = new Date(yFech, mFech, diaF);
-      const dVenc = new Date(yFech, mFech + 1, diaV);
-      // mesAno = mês do vencimento
-      const mesAnoFat = mesAnoStr(dVenc.getMonth(), dVenc.getFullYear());
-      return { dFech, dVenc, mesAnoFat };
-    }
-
-    const { dFech, dVenc, mesAnoFat: mesAnoFatKey } = _faturaAtualCartao(c);
+    // ── Calcular fatura ATUAL pela regra oficial ──
+    // Fatura atual = aquela cujo período (diaF/mesV-1 a diaF-1/mesV) inclui hoje
+    const { mesAnoV: mesAnoFatKey } = faturaAtual(c);
+    const { dInicio, dFim, dVenc } = periodoFatura(mesAnoFatKey, c);
+    const dFech = dFim; // "fechamento" exibido = último dia do período
 
     // ── 1. Fatura atual ──
     _faturasPagas = new Set();
@@ -1596,13 +1625,14 @@ const App = (() => {
     // mesAnoFatKey já é o mês do vencimento (nome da fatura)
     const [mmFat, yyFat] = mesAnoFatKey.split('-').map(Number);
 
-    // Valor da fatura = soma dos créditos no mesAno da fatura
-    const lancsFatAtual = allLancs.filter(l => l.mesAno === mesAnoFatKey && !l.autoFatura);
+    // Valor da fatura = soma dos créditos cuja FATURA (mesPagamento) é a atual
     let valorFatura = 0;
-    lancsFatAtual.filter(l => l.tipo === 'credito' && l.cartaoId === c.id)
-                 .forEach(l => { valorFatura += Math.abs(l.valorParcela || 0); });
-    lancsFatAtual.filter(l => l.tipo === 'fixo' && l.pago && l.cartaoId === c.id)
-                 .forEach(l => { valorFatura += (l.valor || 0); });
+    allLancs.filter(l => !l.autoFatura && l.tipo === 'credito' && l.cartaoId === c.id &&
+                         (l.mesPagamento || l.mesAno) === mesAnoFatKey)
+            .forEach(l => { valorFatura += Math.abs(l.valorParcela || 0); });
+    allLancs.filter(l => !l.autoFatura && l.tipo === 'fixo' && l.pago && l.cartaoId === c.id &&
+                         (l.mesPagamento || l.mesAno) === mesAnoFatKey)
+            .forEach(l => { valorFatura += (l.valor || 0); });
     // Status pago: via fatura automática
     const faturasCartao = allLancs.filter(l => l.autoFatura && l.faturaCartaoId === c.id);
     const faturaAutoAtual = faturasCartao.find(l => l.mesAno === mesAnoFatKey);
@@ -1626,10 +1656,10 @@ const App = (() => {
       // Cada barra = uma fatura (pelo mês do vencimento)
       const dVencRef = new Date(yyFat, (mmFat - 1) - i, 1);
       const keyVenc = mesAnoStr(dVencRef.getMonth(), dVencRef.getFullYear());
-      // Valor = soma créditos neste mesAno para o cartão
-      const lancsRef = allLancs.filter(l => l.mesAno === keyVenc && !l.autoFatura);
+      // Valor = soma créditos cuja FATURA (mesPagamento) é esta
       let valorRef = 0;
-      lancsRef.filter(l => l.tipo === 'credito' && l.cartaoId === c.id)
+      allLancs.filter(l => !l.autoFatura && l.tipo === 'credito' && l.cartaoId === c.id &&
+                           (l.mesPagamento || l.mesAno) === keyVenc)
               .forEach(l => { valorRef += Math.abs(l.valorParcela || 0); });
       histDados.push({
         label: dVencRef.toLocaleDateString('pt-BR',{month:'short'}).replace('.',''),
@@ -1653,10 +1683,10 @@ const App = (() => {
     }).join('');
 
     // ── 3. Transações da fatura atual ──
-    // Parcelas cujo mesAno = mesAnoFatKey (fatura de vencimento deste mês)
+    // Parcelas cuja FATURA (mesPagamento) é a fatura atual
     const txAtual = allLancs.filter(l =>
       !l.autoFatura && l.tipo === 'credito' &&
-      l.cartaoId === c.id && l.mesAno === mesAnoFatKey
+      l.cartaoId === c.id && (l.mesPagamento || l.mesAno) === mesAnoFatKey
     ).sort((a,b) => (b.dataCompra||b.data||'').localeCompare(a.dataCompra||a.data||''));
 
     const txHtml = txAtual.length === 0
@@ -1714,7 +1744,7 @@ const App = (() => {
       const n = primeira.totalParcelas || parcelas.length;
       const valorParcela = primeira.valorParcela || 0;
       const totalCompra = primeira.valorTotal || (valorParcela * n);
-      const pagas = parcelas.filter(p => isParcelaPaga(p.mesAno, c)).length;
+      const pagas = parcelas.filter(p => isParcelaPaga(p.mesPagamento || p.mesAno, c)).length;
       const restantes = n - pagas;
       return { primeira, n, valorParcela, totalCompra, pagas, restantes, concluida: restantes === 0 };
     }).filter(cp => !cp.concluida);
@@ -2241,28 +2271,24 @@ const App = (() => {
               .map(l => l.mesPagamento || l.mesAno)
     )];
     // Garantir que a fatura atual também é processada (mesmo sem créditos)
-    const diaF = cartao.fechamento || 5;
+    // Fatura ATUAL pela regra oficial
+    const { mesAnoV: mesAnoFatAtual } = faturaAtual(cartao);
     const diaV = cartao.vencimento || 10;
-    const diaHoje = hoje.getDate();
-    let mFech, yFech;
-    if (diaF <= diaHoje) { mFech = hoje.getMonth(); yFech = hoje.getFullYear(); }
-    else { const dp = new Date(hoje.getFullYear(), hoje.getMonth()-1, diaF); mFech=dp.getMonth(); yFech=dp.getFullYear(); }
-    const dVencAtual = new Date(yFech, mFech + 1, diaV);
-    const mesAnoFatAtual = mesAnoStr(dVencAtual.getMonth(), dVencAtual.getFullYear());
     if (!mesesFatura.includes(mesAnoFatAtual)) mesesFatura.push(mesAnoFatAtual);
 
     for (const mesAnoFat of mesesFatura) {
       // Não criar lançamentos em meses passados
       if (mesAnoNum(mesAnoFat) < mesAnoNum(mesAtualKey)) continue;
 
-      // Valor = soma de todas as parcelas deste cartão neste mesAno de fatura
+      // Valor = soma de todas as parcelas deste cartão cuja FATURA (mesPagamento) é mesAnoFat
       const parcelasFatura = allLancs.filter(l =>
         !l.autoFatura && l.tipo === 'credito' &&
         l.cartaoId === cartaoId && (l.mesPagamento || l.mesAno) === mesAnoFat
       );
       let totalFatura = parcelasFatura.reduce((s, l) => s + Math.abs(l.valorParcela || 0), 0);
       // Inclui fixos do cartão pagos nesta fatura
-      allLancs.filter(l => l.tipo === 'fixo' && !l.autoFatura && l.cartaoId === cartaoId && l.mesAno === mesAnoFat && l.pago)
+      allLancs.filter(l => l.tipo === 'fixo' && !l.autoFatura && l.cartaoId === cartaoId &&
+                            (l.mesPagamento || l.mesAno) === mesAnoFat && l.pago)
               .forEach(l => { totalFatura += (l.valor || 0); });
 
       // Data de vencimento desta fatura: diaV no mês do mesAnoFat
@@ -2455,6 +2481,43 @@ const App = (() => {
     localStorage.setItem('migr_mesano_compra_v2', '1');
   }
 
+  async function migrarMesPagamentoV4() {
+    // v4: Recalcula mesPagamento (mês da fatura) usando a regra OFICIAL REVISADA:
+    // Para fatura mesAnoV (vence diaV/mmV/yyV):
+    //   FIM    = primeira data diaF-1 ANTERIOR a dataV
+    //   INÍCIO = primeira data diaF ANTERIOR ao FIM
+    // Compra cai na fatura cujo período INÍCIO..FIM a inclui.
+    const jaRodou = localStorage.getItem('migr_mes_pagamento_v4');
+    if (jaRodou) return;
+    const allLancs = await DB.getAllLancamentos();
+    const creditos = allLancs.filter(l => l.tipo === 'credito' && !l.autoFatura && l.cartaoId && (l.dataCompra || l.data));
+    let count = 0;
+    const grupos = {};
+    creditos.forEach(l => { if (l.grupoId) { if (!grupos[l.grupoId]) grupos[l.grupoId] = []; grupos[l.grupoId].push(l); } });
+    for (const [grupoId, parcelas] of Object.entries(grupos)) {
+      parcelas.sort((a, b) => (a.parcela || 0) - (b.parcela || 0));
+      const primeira = parcelas[0];
+      const cartao = getCartaoById(primeira.cartaoId);
+      if (!cartao) continue;
+      const dataC = primeira.dataCompra || primeira.data;
+      if (!dataC) continue;
+      const dCompra = new Date(dataC + 'T12:00:00');
+      const mesAnoCompra = mesAnoStr(dCompra.getMonth(), dCompra.getFullYear());
+      const { mmV, yyV } = faturaDeData(dCompra, cartao);
+      for (let i = 0; i < parcelas.length; i++) {
+        const p = parcelas[i];
+        const dParcela = new Date(yyV, (mmV - 1) + i, 1);
+        const mesPag = mesAnoStr(dParcela.getMonth(), dParcela.getFullYear());
+        if (p.mesAno !== mesAnoCompra || p.mesPagamento !== mesPag) {
+          await DB.updateLancamento({ ...p, mesAno: mesAnoCompra, mesPagamento: mesPag });
+          count++;
+        }
+      }
+    }
+    console.log('[migração v4] ' + count + ' parcelas com mesPagamento recalculado pela regra oficial revisada');
+    localStorage.setItem('migr_mes_pagamento_v4', '1');
+  }
+
   async function init(){
     await DB.open();
     await DB.seedDefaults();
@@ -2472,6 +2535,7 @@ const App = (() => {
     // (precisa rodar após loadData para ter state.cartoes disponível)
     await migrarParcelasParaRegraOficial();
     await migrarMesAnoParaCompra();
+    await migrarMesPagamentoV4();
     // Recalcular faturas automáticas para todos os cartões
     for(const c of state.cartoes) await atualizarFaturaFixa(c.id);
     await loadData(); // recarregar com as faturas atualizadas
@@ -2545,7 +2609,7 @@ const App = (() => {
       const totalCompra = primeira.valorTotal || (valorParcela * n);
 
       const isEffetivamentePaga = (p) =>
-        isParcelaPaga(p.mesAno, cartao);
+        isParcelaPaga(p.mesPagamento || p.mesAno, cartao);
 
       const pagas = parcelas.filter(p => isEffetivamentePaga(p)).length;
       const restantes = n - pagas;
@@ -2635,7 +2699,7 @@ const App = (() => {
     if (state.parcImpactoVisible) {
       const impactoMap = {};
       abertas.forEach(c => c.parcelas.forEach(p => {
-        const key = p.mesAno;
+        const key = p.mesPagamento || p.mesAno;
         if (mesAnoNum(key) < mesAnoNum(mesHojeKey)) return;
         if (!isParcelaPaga(key, c.cartao)) impactoMap[key] = (impactoMap[key]||0) + (p.valorParcela||0);
       }));
@@ -2680,9 +2744,10 @@ const App = (() => {
       }
 
       const detalheRows = c.parcelas.map(p => {
-        const key = p.mesAno;
+        const key = p.mesPagamento || p.mesAno;
         const pago = isParcelaPaga(key, c.cartao);
-        const isProx = !pago && key === c.proxima?.mesAno;
+        const proxKey = c.proxima ? (c.proxima.mesPagamento || c.proxima.mesAno) : null;
+        const isProx = !pago && key === proxKey;
         const [mmStr2, yyStr2] = key.split('-').map(Number);
         const mesLabel = MONTHS_SHORT[mmStr2-1]+'/'+String(yyStr2).slice(2);
         return `<div class="parc-detalhe-row">
