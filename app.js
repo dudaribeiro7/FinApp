@@ -1190,7 +1190,7 @@ const App = (() => {
         toast(`Compra salva — parcela 1 na fatura ${nomeFat1}`,'ok');
         goBack(); return;
       } else {
-        obj.valorTotal=valor;obj.totalParcelas=n;obj.valorParcela=valorParcela;obj.cartaoId=cartaoId;obj.data=dataCompra;obj.estorno=document.getElementById('estorno-toggle')?.dataset.on==='1';
+        obj.valorTotal=valor;obj.totalParcelas=n;obj.valorParcela=valorParcela;obj.cartaoId=cartaoId;obj.data=dataCompra;obj.dataCompra=dataCompra;obj.estorno=document.getElementById('estorno-toggle')?.dataset.on==='1';
       }
     }
 
@@ -1233,6 +1233,39 @@ const App = (() => {
         return;
       }
       await DB.updateLancamento(obj);
+      // Se editou uma parcela de crédito e mudou data/cartão/valor/qtd parcelas,
+      // propagar a mudança para todas as outras parcelas do mesmo grupo.
+      if (obj.tipo === 'credito' && obj.grupoId) {
+        const orig2 = state.lancamentos.find(l => l.id === obj.id) || {};
+        const allLancs = await DB.getAllLancamentos();
+        const irmas = allLancs.filter(l => l.grupoId === obj.grupoId && l.id !== obj.id);
+        const cartaoAtual = getCartaoById(obj.cartaoId);
+        for (const sis of irmas) {
+          const novoSis = {
+            ...sis,
+            // Campos que se aplicam a toda a compra:
+            categoriaId: obj.categoriaId,
+            subcat: obj.subcat,
+            descricao: obj.descricao,
+            valorTotal: obj.valorTotal,
+            totalParcelas: obj.totalParcelas,
+            valorParcela: obj.valorParcela,
+            cartaoId: obj.cartaoId,
+            estorno: obj.estorno,
+            dataCompra: obj.dataCompra,
+            data: obj.dataCompra,
+            mesAno: obj.mesAno, // mês da compra (igual para todas)
+          };
+          // Recalcular mesPagamento desta parcela com base na nova dataCompra/cartão
+          if (cartaoAtual && obj.dataCompra) {
+            const dC = new Date(obj.dataCompra + 'T12:00:00');
+            const { mmV, yyV } = faturaDeData(dC, cartaoAtual);
+            const dP = new Date(yyV, (mmV - 1) + ((sis.parcela||1) - 1), 1);
+            novoSis.mesPagamento = mesAnoStr(dP.getMonth(), dP.getFullYear());
+          }
+          await DB.updateLancamento(novoSis);
+        }
+      }
       // Recalcular fatura automática do cartão se afeta uma fatura
       if (obj.tipo === 'credito' && obj.cartaoId) await atualizarFaturaFixa(obj.cartaoId);
       else if (obj.tipo === 'fixo' && obj.cartaoId) await atualizarFaturaFixa(obj.cartaoId);
