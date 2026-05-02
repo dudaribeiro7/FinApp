@@ -2390,9 +2390,10 @@ const App = (() => {
     await migrarFaturasParaDebito();
     // Migração: preencher data das faturas automáticas com dia de vencimento do cartão
     await migrarDataFaturas();
-    // Migração: recalcular mesAno das parcelas de crédito pela regra oficial
-    await migrarParcelasParaRegraOficial();
     await loadData();
+    // Migração: recalcular mesAno das parcelas de crédito pela regra oficial
+    // (precisa rodar após loadData para ter state.cartoes disponível)
+    await migrarParcelasParaRegraOficial();
     // Recalcular faturas automáticas para todos os cartões
     for(const c of state.cartoes) await atualizarFaturaFixa(c.id);
     await loadData(); // recarregar com as faturas atualizadas
@@ -2786,7 +2787,7 @@ const App = (() => {
     _openAddCat,_openEditCat,_deleteCategoria,_openAddSubcat,_openEditSubcat,_deleteSubcat,
     _openAddCartao,_editCartao,_deleteCartao,_updateCartao,
     _openCartaoBS,_closeCartaoBS,_setCartaoBSPeriodo,
-    _toggleNotif,_togglePanel,_exportar,_importar,_limpar,_setTema,
+    _exportar,_importar,_limpar,_setTema,
     openModal,closeModal,_selColor,_onCustomColor,
     _saveCategoria,_saveSubcat,_saveCartao,
     init,
