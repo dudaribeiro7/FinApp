@@ -785,7 +785,7 @@ const App = (() => {
         }).join('')}
       </div>`;
     }
-    html+=`<div class="modal-btns"><button class="btn-save" onclick="App.closeModal();App.renderLancamentos()">Aplicar</button></div>`;
+    
     content.innerHTML=html;
     document.getElementById('modal-overlay').classList.add('open');
   }
@@ -800,6 +800,7 @@ const App = (() => {
       if(idx>=0) state.lancCatFilter.splice(idx,1);
       else state.lancCatFilter.push({type:'subcat',catId,nome:subcatNome,label});
     }
+    renderLancamentos();
     abrirFiltroCategoria();
   }
   function limparFiltroCategoria() { state.lancCatFilter=[]; renderLancamentos(); }
@@ -2597,7 +2598,6 @@ const App = (() => {
           });
           html += `</div>`;
         }
-        html += `<div class="modal-btns"><button class="btn-save" onclick="App.closeModal();App._reRenderParc()">Aplicar</button></div>`;
         content.innerHTML = html;
       };
       // Expor renderModal para o toggle re-abrir
@@ -2618,6 +2618,7 @@ const App = (() => {
       else state.parcCatFilter.push({type:'subcat', catId, nome:subcatNome, label});
     }
     if (App._renderModalCatParc) App._renderModalCatParc();
+    _reRenderParc();
   }
 
   function _limparFiltCatParc() { state.parcCatFilter = []; _reRenderParc(); }
