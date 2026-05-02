@@ -1461,14 +1461,15 @@ const App = (() => {
       const pct = c.limite ? Math.min((totalComprometido / c.limite) * 100, 100) : 0;
       const disp = Math.max((c.limite || 0) - totalComprometido, 0);
       const iconHtml = getBancoIconHtml(c.nome, 28);
-      return `<div style="margin-bottom:16px">
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+      return `<div style="margin-bottom:12px;background:var(--bg3);border-radius:14px;padding:14px;cursor:pointer;transition:opacity 0.15s;active:opacity:0.7" onclick="App._openCartaoBS(${c.id})" ontouchstart="this.style.opacity='0.7'" ontouchend="this.style.opacity='1'">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
           ${iconHtml || `<div style="width:28px;height:28px;border-radius:7px;background:${c.cor}22;display:flex;align-items:center;justify-content:center;font-size:13px">💳</div>`}
           <span style="font-size:15px;font-weight:600;color:${c.cor}">${c.nome}</span>
           <span style="margin-left:auto;font-size:13px;font-family:'DM Mono',monospace;color:var(--text2)">${fmtMoney(totalComprometido)} <span style="color:var(--text3)">/ ${fmtMoney(c.limite||0)}</span></span>
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="var(--text3)" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
         </div>
-        <div style="height:10px;background:var(--bg4);border-radius:5px;overflow:hidden;margin-bottom:6px">
-          <div style="height:100%;width:${pct}%;background:${c.cor};border-radius:5px"></div>
+        <div style="height:8px;background:var(--bg4);border-radius:4px;overflow:hidden;margin-bottom:6px">
+          <div style="height:100%;width:${pct}%;background:${c.cor};border-radius:4px"></div>
         </div>
         <div style="display:flex;justify-content:space-between">
           <span style="font-size:11px;color:var(--text3)">${pct.toFixed(1)}% comprometido</span>
@@ -1494,6 +1495,222 @@ const App = (() => {
   }
 
   function _setRelPeriodo(p){state.relPeriodo=p;renderRelatorios();}
+
+  /* ── Bottom Sheet: Detalhe do Cartão ── */
+  let _cartaoBSPeriodo = 6; // meses padrão
+
+  function _closeCartaoBS(e) {
+    if (e && e.target !== document.getElementById('cartao-bs-overlay')) return;
+    document.getElementById('cartao-bs-overlay').classList.remove('open');
+  }
+
+  async function _openCartaoBS(cartaoId) {
+    const overlay = document.getElementById('cartao-bs-overlay');
+    const header  = document.getElementById('cartao-bs-header');
+    const body    = document.getElementById('cartao-bs-body');
+    const c = getCartaoById(cartaoId);
+    if (!c) return;
+
+    // Header
+    const iconHtml = getBancoIconHtml(c.nome, 32);
+    header.innerHTML = `
+      ${iconHtml || `<div style="width:32px;height:32px;border-radius:9px;background:${c.cor}22;display:flex;align-items:center;justify-content:center;font-size:16px">💳</div>`}
+      <div style="flex:1">
+        <div style="font-size:17px;font-weight:700;color:${c.cor}">${c.nome}</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:1px">Limite total: ${fmtMoney(c.limite||0)}</div>
+      </div>
+      <button onclick="App._closeCartaoBS({target:document.getElementById('cartao-bs-overlay')})"
+        style="width:30px;height:30px;border-radius:50%;border:none;background:var(--bg4);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="var(--text2)" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>`;
+
+    body.innerHTML = '<div style="padding:40px 0;text-align:center;color:var(--text3);font-size:13px">Carregando…</div>';
+    overlay.classList.add('open');
+
+    await _renderCartaoBSBody(c);
+  }
+
+  async function _renderCartaoBSBody(c) {
+    const body = document.getElementById('cartao-bs-body');
+    const allLancs = await DB.getAllLancamentos();
+    const hoje = new Date();
+    const mesAtualKey = mesAnoStr(hoje.getMonth(), hoje.getFullYear());
+
+    // ── 1. Fatura atual ──
+    const faturasCartao = allLancs.filter(l => l.autoFatura && l.faturaCartaoId === c.id);
+    const faturaAtual   = faturasCartao.find(l => l.mesAno === mesAtualKey);
+    const valorFatura   = faturaAtual ? (faturaAtual.valor || 0) : 0;
+    const pago          = faturaAtual ? !!faturaAtual.pago : false;
+
+    // Data vencimento e fechamento
+    let strVenc = '—', strFech = '—';
+    if (c.vencimento) {
+      const v = new Date(hoje.getFullYear(), hoje.getMonth(), c.vencimento);
+      if (v < hoje) v.setMonth(v.getMonth()+1);
+      strVenc = v.toLocaleDateString('pt-BR',{day:'2-digit',month:'short'});
+    }
+    if (c.fechamento) {
+      const f = new Date(hoje.getFullYear(), hoje.getMonth(), c.fechamento);
+      if (f < hoje) f.setMonth(f.getMonth()+1);
+      strFech = f.toLocaleDateString('pt-BR',{day:'2-digit',month:'short'});
+    }
+
+    const statusColor = pago ? '#4ade80' : (valorFatura > 0 ? '#f59e0b' : '#6b7280');
+    const statusLabel = pago ? '✓ Paga' : (valorFatura > 0 ? '⏳ Aberta' : '– Sem lançamentos');
+    const statusBg    = pago ? '#4ade8020' : (valorFatura > 0 ? '#f59e0b20' : '#6b728020');
+
+    // ── 2. Histórico (gráfico) ──
+    const meses = _cartaoBSPeriodo;
+    const histDados = [];
+    for (let i = meses - 1; i >= 0; i--) {
+      const d = new Date(hoje.getFullYear(), hoje.getMonth() - i, 1);
+      const key = mesAnoStr(d.getMonth(), d.getFullYear());
+      const fat = faturasCartao.find(l => l.mesAno === key);
+      histDados.push({
+        label: d.toLocaleDateString('pt-BR',{month:'short'}).replace('.',''),
+        valor: fat ? (fat.valor || 0) : 0,
+        key,
+      });
+    }
+    const maxVal = Math.max(...histDados.map(d=>d.valor), 1);
+
+    const barsHtml = histDados.map((d, i) => {
+      const h = Math.max((d.valor / maxVal) * 66, d.valor > 0 ? 4 : 0);
+      const isAtual = d.key === mesAtualKey;
+      return `<div class="cartao-bs-bar-wrap">
+        <div class="cartao-bs-bar${isAtual?' active':''}"
+          style="height:${h}px;background:${isAtual ? c.cor : c.cor+'66'}"
+          onclick="this.classList.toggle('active')">
+          <div class="cartao-bs-bar-tip">${fmtMoney(d.valor)}</div>
+        </div>
+        <div class="cartao-bs-bar-label">${d.label}</div>
+      </div>`;
+    }).join('');
+
+    // ── 3. Transações da fatura atual ──
+    const txAtual = allLancs.filter(l =>
+      !l.autoFatura && l.mesAno === mesAtualKey &&
+      (l.cartaoId === c.id || l.faturaCartaoId === c.id) &&
+      l.tipo === 'credito'
+    ).sort((a,b) => (b.data||'').localeCompare(a.data||''));
+
+    const txHtml = txAtual.length === 0
+      ? `<div style="padding:16px 0;text-align:center;color:var(--text3);font-size:13px">Nenhuma transação neste mês</div>`
+      : txAtual.map(l => {
+          const cat = getCatById(l.categoriaId);
+          const emoji = cat?.emoji || '💳';
+          const cor   = cat?.cor   || c.cor;
+          const parcelaBadge = (l.totalParcelas > 1)
+            ? `<span class="cartao-bs-badge">${l.numeroParcela||'?'}/${l.totalParcelas}</span>` : '';
+          const dataFmt = l.data
+            ? new Date(l.data+'T12:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'short'})
+            : '';
+          return `<div class="cartao-bs-tx">
+            <div class="cartao-bs-tx-icon" style="background:${cor}22">${emoji}</div>
+            <div class="cartao-bs-tx-info">
+              <div class="cartao-bs-tx-desc">${l.descricao||'Sem descrição'}${parcelaBadge}</div>
+              <div class="cartao-bs-tx-sub">${cat?.nome||'Sem categoria'}${dataFmt?' · '+dataFmt:''}</div>
+            </div>
+            <div class="cartao-bs-tx-valor">${fmtMoney(l.valor)}</div>
+          </div>`;
+        }).join('');
+
+    // ── 4. Parcelas em aberto ──
+    const parcAberto = allLancs.filter(l =>
+      !l.autoFatura && l.totalParcelas > 1 &&
+      (l.cartaoId === c.id || l.faturaCartaoId === c.id) &&
+      mesAnoNum(l.mesAno) >= mesAnoNum(mesAtualKey) &&
+      !l.pago
+    );
+    // Agrupar por grupoId
+    const grupos = {};
+    for (const l of parcAberto) {
+      const gid = l.grupoId || l.id;
+      if (!grupos[gid]) grupos[gid] = [];
+      grupos[gid].push(l);
+    }
+    const parcHtml = Object.values(grupos).length === 0
+      ? `<div style="padding:16px 0;text-align:center;color:var(--text3);font-size:13px">Nenhuma parcela em aberto</div>`
+      : Object.values(grupos).map(grp => {
+          const primeiro = grp.reduce((a,b)=>mesAnoNum(a.mesAno)<mesAnoNum(b.mesAno)?a:b);
+          const total    = primeiro.totalParcelas || grp.length;
+          const pagas    = (primeiro.numeroParcela || 1) - 1;
+          const restantes = total - pagas;
+          const valMensal = primeiro.valor || 0;
+          const valRestante = valMensal * restantes;
+          const pct = Math.round((pagas / total) * 100);
+          return `<div class="cartao-bs-parc">
+            <div class="cartao-bs-parc-top">
+              <div class="cartao-bs-parc-desc">${primeiro.descricao||'Parcela'}</div>
+              <div class="cartao-bs-parc-vals">
+                <div class="cartao-bs-parc-mensal">${fmtMoney(valMensal)}/mês</div>
+                <div class="cartao-bs-parc-restante">${fmtMoney(valRestante)} restante</div>
+              </div>
+            </div>
+            <div class="cartao-bs-parc-prog-row">
+              <span class="cartao-bs-parc-prog-label">${pagas}/${total} pagas</span>
+              <span class="cartao-bs-parc-prog-label">${restantes} restantes</span>
+            </div>
+            <div class="cartao-bs-mini-bar">
+              <div class="cartao-bs-mini-fill" style="width:${pct}%;background:${c.cor}"></div>
+            </div>
+          </div>`;
+        }).join('');
+
+    body.innerHTML = `
+      <!-- Fatura atual -->
+      <div class="cartao-bs-section">
+        <div class="cartao-bs-section-title">Fatura atual</div>
+        <div class="cartao-bs-fatura-card">
+          <div>
+            <div style="font-size:11px;color:var(--text3);margin-bottom:4px">${new Date().toLocaleDateString('pt-BR',{month:'long',year:'numeric'})}</div>
+            <div class="cartao-bs-fatura-valor">${fmtMoney(valorFatura)}</div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <span class="cartao-bs-status" style="background:${statusBg};color:${statusColor}">${statusLabel}</span>
+          </div>
+          <div style="display:flex;gap:0;flex-direction:column;gap:6px">
+            <div class="cartao-bs-fatura-row">
+              <span class="cartao-bs-fatura-label">Fechamento</span>
+              <span class="cartao-bs-fatura-val">${strFech}</span>
+            </div>
+            <div class="cartao-bs-fatura-row">
+              <span class="cartao-bs-fatura-label">Vencimento</span>
+              <span class="cartao-bs-fatura-val">${strVenc}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Evolução -->
+      <div class="cartao-bs-section">
+        <div class="cartao-bs-section-title">Evolução das faturas</div>
+        <div class="cartao-bs-period-sel">
+          ${[3,6,12].map(n=>`<button class="cartao-bs-period-btn${_cartaoBSPeriodo===n?' active':''}"
+            onclick="App._setCartaoBSPeriodo(${c.id},${n})">${n}M</button>`).join('')}
+        </div>
+        <div class="cartao-bs-bars">${barsHtml}</div>
+      </div>
+
+      <!-- Transações -->
+      <div class="cartao-bs-section">
+        <div class="cartao-bs-section-title">Transações do mês</div>
+        ${txHtml}
+      </div>
+
+      <!-- Parcelas em aberto -->
+      <div class="cartao-bs-section" style="margin-bottom:20px">
+        <div class="cartao-bs-section-title">Parcelas em aberto</div>
+        ${parcHtml}
+      </div>
+    `;
+  }
+
+  async function _setCartaoBSPeriodo(cartaoId, meses) {
+    _cartaoBSPeriodo = meses;
+    const c = getCartaoById(cartaoId);
+    if (c) await _renderCartaoBSBody(c);
+  }
 
   function drawLineChart(dados){
     const canvas=document.getElementById('line-canvas');
@@ -2642,6 +2859,7 @@ const App = (() => {
     setCfgTab,_toggleCatRow,
     _openAddCat,_openEditCat,_deleteCategoria,_openAddSubcat,_openEditSubcat,_deleteSubcat,
     _openAddCartao,_editCartao,_deleteCartao,_updateCartao,
+    _openCartaoBS,_closeCartaoBS,_setCartaoBSPeriodo,
     _toggleNotif,_togglePanel,_exportar,_importar,_limpar,_setTema,
     openModal,closeModal,_selColor,_onCustomColor,
     _saveCategoria,_saveSubcat,_saveCartao,

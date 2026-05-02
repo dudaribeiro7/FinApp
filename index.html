@@ -559,6 +559,110 @@ select option{background:var(--bg3)}
 .modal-btns .btn-save{background:var(--accent);color:#fff}
 .modal-btns .btn-save:active,.modal-btns .btn-cancel:active{transform:scale(0.98)}
 
+/* ── Bottom Sheet: Detalhe do Cartão ── */
+.cartao-bs-overlay{
+  position:fixed;inset:0;background:#00000088;z-index:300;
+  opacity:0;pointer-events:none;transition:opacity 0.25s;
+}
+.cartao-bs-overlay.open{opacity:1;pointer-events:all}
+.cartao-bs{
+  position:fixed;bottom:0;left:0;right:0;max-width:430px;margin:0 auto;
+  background:var(--bg2);border-radius:20px 20px 0 0;
+  padding-bottom:calc(20px + var(--safe-bottom));
+  transform:translateY(100%);transition:transform 0.35s cubic-bezier(.32,.72,0,1);
+  z-index:301;max-height:92vh;display:flex;flex-direction:column;
+}
+.cartao-bs-overlay.open .cartao-bs{transform:translateY(0)}
+.cartao-bs-handle{
+  width:36px;height:4px;border-radius:2px;background:var(--border2);
+  margin:12px auto 0;flex-shrink:0;
+}
+.cartao-bs-header{
+  display:flex;align-items:center;gap:12px;padding:16px 20px 12px;flex-shrink:0;
+  border-bottom:0.5px solid var(--border);
+}
+.cartao-bs-scroll{flex:1;overflow-y:auto;padding:0 20px 8px;}
+.cartao-bs-section{margin-top:20px}
+.cartao-bs-section-title{
+  font-size:11px;font-weight:600;letter-spacing:0.8px;
+  color:var(--text3);text-transform:uppercase;margin-bottom:12px;
+}
+/* Fatura atual */
+.cartao-bs-fatura-card{
+  background:var(--bg3);border-radius:14px;padding:16px;
+  display:flex;flex-direction:column;gap:10px;
+}
+.cartao-bs-fatura-valor{font-size:28px;font-weight:700;letter-spacing:-0.5px}
+.cartao-bs-fatura-row{display:flex;justify-content:space-between;align-items:center}
+.cartao-bs-fatura-label{font-size:12px;color:var(--text3)}
+.cartao-bs-fatura-val{font-size:13px;font-weight:500;color:var(--text2)}
+.cartao-bs-status{
+  display:inline-flex;align-items:center;gap:5px;
+  padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;
+}
+/* Seletor período gráfico */
+.cartao-bs-period-sel{
+  display:flex;gap:6px;margin-bottom:14px;
+}
+.cartao-bs-period-btn{
+  padding:5px 14px;border-radius:20px;border:0.5px solid var(--border2);
+  background:transparent;color:var(--text3);font-size:12px;font-weight:500;
+  font-family:'DM Sans',sans-serif;cursor:pointer;transition:all 0.15s;
+}
+.cartao-bs-period-btn.active{
+  background:var(--accent);border-color:var(--accent);color:#fff;
+}
+/* Gráfico de barras */
+.cartao-bs-bars{
+  display:flex;align-items:flex-end;gap:6px;height:90px;
+  padding-bottom:24px;position:relative;
+}
+.cartao-bs-bar-wrap{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;height:100%;}
+.cartao-bs-bar{
+  width:100%;border-radius:5px 5px 0 0;min-height:3px;
+  transition:height 0.4s cubic-bezier(.32,.72,0,1);cursor:pointer;position:relative;
+}
+.cartao-bs-bar-label{font-size:9px;color:var(--text3);position:absolute;bottom:-18px;white-space:nowrap}
+.cartao-bs-bar-tip{
+  position:absolute;top:-28px;left:50%;transform:translateX(-50%);
+  background:var(--bg4);border-radius:6px;padding:3px 6px;
+  font-size:10px;font-weight:600;color:var(--text1);white-space:nowrap;
+  opacity:0;pointer-events:none;transition:opacity 0.15s;z-index:10;
+}
+.cartao-bs-bar.active .cartao-bs-bar-tip{opacity:1}
+/* Lista de transações */
+.cartao-bs-tx{
+  display:flex;align-items:center;gap:10px;
+  padding:10px 0;border-bottom:0.5px solid var(--border);
+}
+.cartao-bs-tx:last-child{border-bottom:none}
+.cartao-bs-tx-icon{
+  width:34px;height:34px;border-radius:10px;display:flex;align-items:center;
+  justify-content:center;font-size:16px;flex-shrink:0;
+}
+.cartao-bs-tx-info{flex:1;min-width:0}
+.cartao-bs-tx-desc{font-size:13px;font-weight:500;color:var(--text1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cartao-bs-tx-sub{font-size:11px;color:var(--text3);margin-top:2px}
+.cartao-bs-tx-valor{font-size:13px;font-weight:600;color:var(--text1);flex-shrink:0}
+.cartao-bs-badge{
+  display:inline-block;padding:1px 6px;border-radius:8px;
+  font-size:10px;font-weight:600;margin-left:4px;
+  background:var(--accent-dim,#7c6ff722);color:var(--accent);
+}
+/* Parcelas em aberto */
+.cartao-bs-parc{
+  background:var(--bg3);border-radius:12px;padding:12px;margin-bottom:8px;
+}
+.cartao-bs-parc-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px}
+.cartao-bs-parc-desc{font-size:13px;font-weight:500;color:var(--text1)}
+.cartao-bs-parc-vals{text-align:right}
+.cartao-bs-parc-mensal{font-size:13px;font-weight:600;color:var(--text1)}
+.cartao-bs-parc-restante{font-size:11px;color:var(--text3);margin-top:1px}
+.cartao-bs-parc-prog-row{display:flex;justify-content:space-between;margin-bottom:4px}
+.cartao-bs-parc-prog-label{font-size:10px;color:var(--text3)}
+.cartao-bs-mini-bar{height:4px;background:var(--bg4);border-radius:2px;overflow:hidden}
+.cartao-bs-mini-fill{height:100%;border-radius:2px;transition:width 0.4s}
+
 /* color grid */
 .color-grid{display:flex;gap:10px;flex-wrap:wrap}
 .color-opt{width:30px;height:30px;border-radius:50%;cursor:pointer;border:2px solid transparent;transition:all 0.15s}
@@ -955,6 +1059,15 @@ select option{background:var(--bg3)}
 <!-- MODAL -->
 <div class="modal-overlay" id="modal-overlay" onclick="App.closeModal(event)">
   <div class="modal" id="modal-content"></div>
+</div>
+
+<!-- Bottom Sheet Detalhe Cartão -->
+<div class="cartao-bs-overlay" id="cartao-bs-overlay" onclick="App._closeCartaoBS(event)">
+  <div class="cartao-bs" id="cartao-bs">
+    <div class="cartao-bs-handle"></div>
+    <div class="cartao-bs-header" id="cartao-bs-header"></div>
+    <div class="cartao-bs-scroll" id="cartao-bs-body"></div>
+  </div>
 </div>
 
 </div><!-- #app -->
