@@ -170,12 +170,9 @@ const App = (() => {
     if (!dVenc) return false;
     // Vencimento no passado → paga automaticamente
     if (dVenc < hoje) return true;
-    // Vencimento futuro → verifica lançamento automático
+    // Vencimento futuro → verifica lançamento automático da fatura (mesmo mesAnoV)
     if (_faturasPagas && cartao) {
-      const [mm, yy] = mesAno.split('-').map(Number);
-      const dPgto = new Date(yy, mm, 1);
-      const mesPgto = mesAnoStr(dPgto.getMonth(), dPgto.getFullYear());
-      return _faturasPagas.has(cartao.id + '|' + mesPgto);
+      return _faturasPagas.has(cartao.id + '|' + mesAno);
     }
     return false;
   }
