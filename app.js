@@ -473,7 +473,7 @@ const App = (() => {
       let valorFat = 0;
       allLancsHome.filter(l => !l.autoFatura && l.tipo === 'credito' && l.cartaoId === c.id &&
                                (l.mesPagamento || l.mesAno) === mesAnoFat)
-                  .forEach(l => { valorFat += Math.abs(l.valorParcela || 0); });
+                  .forEach(l => { valorFat += (l.valorParcela || 0); });
       allLancsHome.filter(l => !l.autoFatura && l.tipo === 'fixo' && l.pago && l.cartaoId === c.id &&
                                (l.mesPagamento || l.mesAno) === mesAnoFat)
                   .forEach(l => { valorFat += (l.valor || 0); });
@@ -1142,6 +1142,16 @@ const App = (() => {
         obj.pago=document.getElementById('toggle-pago')?.classList.contains('on')||false;
         obj.dataPagamento=dataPagtoInput||null;
       }
+      // Se pagamento for crédito, calcular mesPagamento (mês da fatura) com base na data efetiva do pagamento
+      if (obj.cartaoId) {
+        const cartao = getCartaoById(obj.cartaoId);
+        const dataRefStr = obj.dataPagamento || obj.data;
+        if (cartao && dataRefStr) {
+          const dRef = new Date(dataRefStr + 'T12:00:00');
+          const { mesAnoV } = faturaDeData(dRef, cartao);
+          obj.mesPagamento = mesAnoV;
+        }
+      }
       if(!state.editingId){
         // mesAnoMinimo = mês atual (não replicar em meses passados)
         const mesAnoMinimo=mesAnoStr(state.currentMonth,state.currentYear);
@@ -1600,7 +1610,7 @@ const App = (() => {
         !l.autoFatura && l.tipo === 'credito' && l.cartaoId === c.id &&
         mesAnoNum(l.mesPagamento || l.mesAno) >= mesAnoNum(mesAnoFatAtual)
       );
-      const totalComprometido = parcelasEmAberto.reduce((s, l) => s + Math.abs(l.valorParcela || 0), 0);
+      const totalComprometido = parcelasEmAberto.reduce((s, l) => s + (l.valorParcela || 0), 0);
 
       const pct = c.limite ? Math.min((totalComprometido / c.limite) * 100, 100) : 0;
       const disp = Math.max((c.limite || 0) - totalComprometido, 0);
@@ -1699,10 +1709,11 @@ const App = (() => {
     const [mmFat, yyFat] = mesAnoFatKey.split('-').map(Number);
 
     // Valor da fatura = soma dos créditos cuja FATURA (mesPagamento) é a atual
+    // Estornos têm valorParcela negativo → subtraem naturalmente
     let valorFatura = 0;
     allLancs.filter(l => !l.autoFatura && l.tipo === 'credito' && l.cartaoId === c.id &&
                          (l.mesPagamento || l.mesAno) === mesAnoFatKey)
-            .forEach(l => { valorFatura += Math.abs(l.valorParcela || 0); });
+            .forEach(l => { valorFatura += (l.valorParcela || 0); });
     allLancs.filter(l => !l.autoFatura && l.tipo === 'fixo' && l.pago && l.cartaoId === c.id &&
                          (l.mesPagamento || l.mesAno) === mesAnoFatKey)
             .forEach(l => { valorFatura += (l.valor || 0); });
@@ -1755,7 +1766,7 @@ const App = (() => {
       let valorRef = 0;
       allLancs.filter(l => !l.autoFatura && l.tipo === 'credito' && l.cartaoId === c.id &&
                            (l.mesPagamento || l.mesAno) === keyVenc)
-              .forEach(l => { valorRef += Math.abs(l.valorParcela || 0); });
+              .forEach(l => { valorRef += (l.valorParcela || 0); });
       histDados.push({
         label: dRef.toLocaleDateString('pt-BR',{month:'short'}).replace('.',''),
         valor: valorRef,
@@ -1771,7 +1782,7 @@ const App = (() => {
       let valorRef = 0;
       allLancs.filter(l => !l.autoFatura && l.tipo === 'credito' && l.cartaoId === c.id &&
                            (l.mesPagamento || l.mesAno) === keyVenc)
-              .forEach(l => { valorRef += Math.abs(l.valorParcela || 0); });
+              .forEach(l => { valorRef += (l.valorParcela || 0); });
       if (valorRef === 0) continue; // só mostra futuras se tiverem valor
       histDados.push({
         label: dRef.toLocaleDateString('pt-BR',{month:'short'}).replace('.',''),
@@ -2420,7 +2431,7 @@ const App = (() => {
         !l.autoFatura && l.tipo === 'credito' &&
         l.cartaoId === cartaoId && (l.mesPagamento || l.mesAno) === mesAnoFat
       );
-      let totalFatura = parcelasFatura.reduce((s, l) => s + Math.abs(l.valorParcela || 0), 0);
+      let totalFatura = parcelasFatura.reduce((s, l) => s + (l.valorParcela || 0), 0);
       // Inclui fixos do cartão pagos nesta fatura
       allLancs.filter(l => l.tipo === 'fixo' && !l.autoFatura && l.cartaoId === cartaoId &&
                             (l.mesPagamento || l.mesAno) === mesAnoFat && l.pago)
@@ -2653,6 +2664,33 @@ const App = (() => {
     localStorage.setItem('migr_mes_pagamento_v4', '1');
   }
 
+  async function migrarFixosCreditoMesPagamento() {
+    // v5: setar mesPagamento nos gastos fixos pagos no crédito,
+    // calculado a partir da data efetiva do pagamento e da regra do cartão.
+    // Sem isso, fixos do crédito não aparecem na lista de transações da fatura
+    // nem somam corretamente quando o pagamento atravessa o fechamento.
+    const jaRodou = localStorage.getItem('migr_fixos_credito_mespag_v5');
+    if (jaRodou) return;
+    const allLancs = await DB.getAllLancamentos();
+    const fixosCred = allLancs.filter(l =>
+      l.tipo === 'fixo' && !l.autoFatura && l.cartaoId && (l.dataPagamento || l.data)
+    );
+    let count = 0;
+    for (const l of fixosCred) {
+      const cartao = getCartaoById(l.cartaoId);
+      if (!cartao) continue;
+      const dataRefStr = l.dataPagamento || l.data;
+      const dRef = new Date(dataRefStr + 'T12:00:00');
+      const { mesAnoV } = faturaDeData(dRef, cartao);
+      if (l.mesPagamento !== mesAnoV) {
+        await DB.updateLancamento({ ...l, mesPagamento: mesAnoV });
+        count++;
+      }
+    }
+    console.log('[migração v5] ' + count + ' fixos de crédito com mesPagamento setado');
+    localStorage.setItem('migr_fixos_credito_mespag_v5', '1');
+  }
+
   async function init(){
     await DB.open();
     await DB.seedDefaults();
@@ -2671,6 +2709,7 @@ const App = (() => {
     await migrarParcelasParaRegraOficial();
     await migrarMesAnoParaCompra();
     await migrarMesPagamentoV4();
+    await migrarFixosCreditoMesPagamento();
     // Recalcular faturas automáticas para todos os cartões
     for(const c of state.cartoes) await atualizarFaturaFixa(c.id);
     await loadData(); // recarregar com as faturas atualizadas
