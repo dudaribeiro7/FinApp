@@ -1666,6 +1666,19 @@ const App = (() => {
   let _cartaoBSPeriodo = 6; // meses padrão
   let _cartaoBSFaturaSel = null; // fatura selecionada (mesAnoV); null = fatura atual
 
+  // Helper: rola até a seção "Fatura atual/selecionada" do detalhe do cartão
+  function _scrollToFaturaSection(cartaoId) {
+    const body = document.getElementById(`cartao-detalhe-${cartaoId}`);
+    if (!body) return;
+    const titles = body.querySelectorAll('.cartao-bs-section-title');
+    for (const t of titles) {
+      if (t.textContent.startsWith('Fatura')) {
+        t.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        return;
+      }
+    }
+  }
+
   // Toggle: expande o cartão clicado (e fecha qualquer outro). Se já estiver aberto, colapsa.
   async function _toggleCartaoExpandido(cartaoId) {
     if (state.cartaoExpandidoId === cartaoId) {
@@ -1676,12 +1689,9 @@ const App = (() => {
       _cartaoBSPeriodo = 6;            // reset período
     }
     await renderLimiteCartoes(document.getElementById('rel-content'));
-    // Scroll suave até o cartão expandido
+    // Scroll suave até a seção da fatura
     if (state.cartaoExpandidoId) {
-      setTimeout(() => {
-        const row = document.getElementById(`cartao-row-${state.cartaoExpandidoId}`);
-        if (row) row.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }, 50);
+      setTimeout(() => _scrollToFaturaSection(state.cartaoExpandidoId), 80);
     }
   }
 
@@ -1694,11 +1704,8 @@ const App = (() => {
     setRelTab('cartoes');
     // Navega pra tela de relatórios (vai re-renderizar, mas state.cartaoExpandidoId já está setado)
     gotoScreen('screen-relatorios');
-    // Scroll suave até o cartão após render
-    setTimeout(() => {
-      const row = document.getElementById(`cartao-row-${cartaoId}`);
-      if (row) row.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }, 250);
+    // Scroll suave até a seção da fatura após render
+    setTimeout(() => _scrollToFaturaSection(cartaoId), 280);
   }
 
   async function _renderCartaoDetalhe(c) {
@@ -1935,17 +1942,7 @@ const App = (() => {
     const c = getCartaoById(cartaoId);
     if (c) {
       await _renderCartaoDetalhe(c);
-      // Scroll suave para a seção de transações dentro do detalhe
-      const body = document.getElementById(`cartao-detalhe-${cartaoId}`);
-      const titles = body?.querySelectorAll('.cartao-bs-section-title');
-      if (titles) {
-        for (const t of titles) {
-          if (t.textContent.startsWith('Transações')) {
-            t.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            break;
-          }
-        }
-      }
+      _scrollToFaturaSection(cartaoId);
     }
   }
 
