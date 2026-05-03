@@ -1767,6 +1767,9 @@ const App = (() => {
       allLancs.filter(l => !l.autoFatura && l.tipo === 'credito' && l.cartaoId === c.id &&
                            (l.mesPagamento || l.mesAno) === keyVenc)
               .forEach(l => { valorRef += (l.valorParcela || 0); });
+      allLancs.filter(l => !l.autoFatura && l.tipo === 'fixo' && l.pago && l.cartaoId === c.id &&
+                           (l.mesPagamento || l.mesAno) === keyVenc)
+              .forEach(l => { valorRef += (l.valor || 0); });
       histDados.push({
         label: dRef.toLocaleDateString('pt-BR',{month:'short'}).replace('.',''),
         valor: valorRef,
@@ -1783,6 +1786,9 @@ const App = (() => {
       allLancs.filter(l => !l.autoFatura && l.tipo === 'credito' && l.cartaoId === c.id &&
                            (l.mesPagamento || l.mesAno) === keyVenc)
               .forEach(l => { valorRef += (l.valorParcela || 0); });
+      allLancs.filter(l => !l.autoFatura && l.tipo === 'fixo' && l.pago && l.cartaoId === c.id &&
+                           (l.mesPagamento || l.mesAno) === keyVenc)
+              .forEach(l => { valorRef += (l.valor || 0); });
       if (valorRef === 0) continue; // só mostra futuras se tiverem valor
       histDados.push({
         label: dRef.toLocaleDateString('pt-BR',{month:'short'}).replace('.',''),
