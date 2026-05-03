@@ -1798,10 +1798,11 @@ const App = (() => {
     }).join('');
 
     // ── 3. Transações da fatura atual ──
-    // Parcelas cuja FATURA (mesPagamento) é a fatura atual
+    // Parcelas (crédito) E gastos fixos pagos no crédito cuja FATURA (mesPagamento) é a atual
     const txAtual = allLancs.filter(l =>
-      !l.autoFatura && l.tipo === 'credito' &&
-      l.cartaoId === c.id && (l.mesPagamento || l.mesAno) === mesAnoFatKey
+      !l.autoFatura && l.cartaoId === c.id &&
+      (l.mesPagamento || l.mesAno) === mesAnoFatKey &&
+      (l.tipo === 'credito' || (l.tipo === 'fixo' && l.pago))
     ).sort((a,b) => (b.dataCompra||b.data||'').localeCompare(a.dataCompra||a.data||''));
 
     const txHtml = txAtual.length === 0
@@ -1815,9 +1816,11 @@ const App = (() => {
             if (sub?.emoji) emoji = sub.emoji;
           }
           const cor = c.cor;
+          const isFixoCred = l.tipo === 'fixo';
+          const isEstornoCred = l.tipo === 'credito' && l.estorno;
           // Nome: descrição > subcat > cat
           const nome = l.descricao || l.subcat || cat?.nome || 'Compra';
-          // Detalhe: "subcat · data da compra · parcela X/Y"
+          // Detalhe: "subcat · data da compra · parcela X/Y" (ou "Gasto fixo" pra fixo)
           let sub = '';
           if (l.subcat && cat) sub = `${cat.nome} › ${l.subcat}`;
           else if (cat) sub = cat.nome;
@@ -1825,10 +1828,19 @@ const App = (() => {
             ? new Date((l.dataCompra||l.data)+'T12:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})
             : '';
           if (dataCompraFmt) sub += (sub ? ' · ' : '') + dataCompraFmt;
-          const parcelaInfo = l.totalParcelas > 1
-            ? ` · <span style="font-size:10px;padding:1px 5px;border-radius:4px;background:${cor}22;color:${cor}">${l.parcela||1}/${l.totalParcelas}</span>`
-            : ' · à vista';
-          const valor = Math.abs(l.valorParcela || 0);
+          let parcelaInfo;
+          if (isFixoCred) {
+            parcelaInfo = ` · <span style="font-size:10px;padding:1px 5px;border-radius:4px;background:${cor}22;color:${cor}">fixo</span>`;
+          } else if (l.totalParcelas > 1) {
+            parcelaInfo = ` · <span style="font-size:10px;padding:1px 5px;border-radius:4px;background:${cor}22;color:${cor}">${l.parcela||1}/${l.totalParcelas}</span>`;
+          } else {
+            parcelaInfo = ' · à vista';
+          }
+          const valor = isFixoCred
+            ? Math.abs(l.valor || 0)
+            : Math.abs(l.valorParcela || 0);
+          const sinal = isEstornoCred ? '+' : '-';
+          const corValor = isEstornoCred ? 'var(--green)' : cor;
           return `<div class="feed-item" onclick="App.editLancamento(${l.id})" style="margin:0 0 4px;border-radius:10px">
             <div class="feed-icon" style="background:${cor}22">
               <span style="font-size:17px;line-height:1">${emoji}</span>
@@ -1838,7 +1850,7 @@ const App = (() => {
               <div class="feed-cat">${sub}</div>
             </div>
             <div class="feed-right">
-              <div class="feed-val" style="color:${cor}">-${fmtMoney(valor)}</div>
+              <div class="feed-val" style="color:${corValor}">${sinal}${fmtMoney(valor)}</div>
             </div>
           </div>`;
         }).join('');
