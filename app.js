@@ -14,7 +14,7 @@ const App = (() => {
     lancCatFilter: [],
     relTab: 'mensal',
     relPeriodo: 6,
-    analiseFiltros: null, // {dataInicio, dataFim, tipos:[], pagamentos:[], catFilter:[]}
+    analiseFiltros: null, // {dataInicio, dataFim, tipos:[], pagamentos:[], catFilter:[], mostrarParcelas}
     analiseListaAberta: false,
     cfgTab: 'categorias',
     editingId: null,
@@ -1676,12 +1676,28 @@ const App = (() => {
       tipos: [],        // [] = todos. Opções: 'entrada','debito','credito','fixo'
       pagamentos: [],   // [] = todos. 'debito' ou 'credito_<cartaoId>'
       catFilter: [],    // mesmo formato de lancCatFilter: [{type:'cat',id,label} | {type:'subcat',catId,nome,label}]
+      mostrarParcelas: true, // true = parcelas separadas; false = compras cheias
     };
+  }
+
+  // Calcula a data de referência da parcela: dataCompra + (parcela-1) meses
+  // Ex: compra 12/01 em 10x → parcela 5 = 12/05
+  function _dataParcela(dataCompra, numParcela) {
+    if (!dataCompra) return null;
+    const [y,m,d] = dataCompra.split('-').map(Number);
+    // novo mês = m + (numParcela-1). Atenção: m é 1-12 aqui
+    const dt = new Date(y, (m-1) + (numParcela-1), d);
+    return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
   }
 
   // Pega a "data efetiva" do lançamento para filtro de período
   function _dataLanc(l) {
-    if (l.tipo === 'credito') return l.dataCompra || l.data;
+    if (l.tipo === 'credito') {
+      // Para parcelas, usar a regra: dataCompra + (parcela-1) meses
+      const dc = l.dataCompra || l.data;
+      if (dc && l.parcela) return _dataParcela(dc, l.parcela);
+      return dc;
+    }
     return l.data;
   }
 
@@ -1693,17 +1709,32 @@ const App = (() => {
     return l.valor || 0;
   }
 
+  // Status do lançamento: 'efetuado' ou 'previsto'
+  function _statusLanc(l) {
+    const hoje = todayStr();
+    if (l.tipo === 'fixo') return l.pago ? 'efetuado' : 'previsto';
+    if (l.tipo === 'credito') {
+      const dRef = _dataLanc(l);
+      return (dRef && dRef <= hoje) ? 'efetuado' : 'previsto';
+    }
+    // entrada e debito: data <= hoje
+    return (l.data && l.data <= hoje) ? 'efetuado' : 'previsto';
+  }
+
   // Aplica todos os filtros sobre o conjunto completo de lançamentos
+  // Retorna lista de "itens" — pode ser lançamento individual OU compra agrupada (modo cheio).
+  // Cada item tem o shape: {l, ehCompraCheia, valor, data, status}
+  // - Modo "parcelas separadas": cada lançamento de crédito vira 1 item (parcela)
+  // - Modo "compras cheias": parcelas do mesmo grupoId viram 1 item (representando a compra inteira)
   function _aplicarFiltrosAnalise(allLancs) {
     const f = state.analiseFiltros;
-    return allLancs.filter(l => {
+    const passaFiltrosBasicos = (l, dataRef) => {
       // Ignorar fatura_cartao automática (é só agregador)
       if (l.tipo === 'fatura_cartao') return false;
 
-      const data = _dataLanc(l);
       // Data
-      if (f.dataInicio && (!data || data < f.dataInicio)) return false;
-      if (f.dataFim && (!data || data > f.dataFim)) return false;
+      if (f.dataInicio && (!dataRef || dataRef < f.dataInicio)) return false;
+      if (f.dataFim && (!dataRef || dataRef > f.dataFim)) return false;
 
       // Tipo
       if (f.tipos.length > 0 && !f.tipos.includes(l.tipo)) return false;
@@ -1717,7 +1748,6 @@ const App = (() => {
           if (l.pagamento === 'debito') key = 'debito';
           else if (l.cartaoId) key = 'credito_' + l.cartaoId;
         }
-        // Entradas não têm forma de pagamento → se houver filtro de pagamento, são excluídas
         if (!key) return false;
         if (!f.pagamentos.includes(key)) return false;
       }
@@ -1731,9 +1761,72 @@ const App = (() => {
         });
         if (!ok) return false;
       }
-
       return true;
-    });
+    };
+
+    const itens = [];
+
+    if (f.mostrarParcelas) {
+      // Modo padrão: cada parcela vira um item separado
+      for (const l of allLancs) {
+        const data = _dataLanc(l);
+        if (!passaFiltrosBasicos(l, data)) continue;
+        itens.push({
+          l,
+          ehCompraCheia: false,
+          valor: _valorLanc(l),
+          data,
+          status: _statusLanc(l),
+        });
+      }
+    } else {
+      // Modo cheio: agrupar parcelas de crédito por grupoId
+      const gruposVistos = new Set();
+      for (const l of allLancs) {
+        if (l.tipo === 'credito' && l.grupoId) {
+          if (gruposVistos.has(l.grupoId)) continue;
+          gruposVistos.add(l.grupoId);
+          // Pega todas as parcelas do grupo
+          const parcelas = allLancs.filter(x => x.grupoId === l.grupoId && x.tipo === 'credito');
+          // Acha a parcela 1 (a "compra")
+          const p1 = parcelas.find(x => x.parcela === 1) || parcelas[0];
+          const dataCompra = p1.dataCompra || p1.data;
+          // Filtros básicos usando a parcela 1 como referência (mesma cat, mesmo cartão)
+          if (!passaFiltrosBasicos(p1, dataCompra)) continue;
+          // Valor total: soma de todas as parcelas (valorTotal pode existir mas usar soma é mais seguro)
+          const valorTotal = p1.valorTotal || parcelas.reduce((s,p) => s + (p.valorParcela||0), 0);
+          // Status: efetuado se a compra já foi feita (dataCompra <= hoje)
+          const hoje = todayStr();
+          const status = (dataCompra && dataCompra <= hoje) ? 'efetuado' : 'previsto';
+          itens.push({
+            l: p1,
+            ehCompraCheia: true,
+            valor: valorTotal,
+            data: dataCompra,
+            status,
+            totalParcelas: parcelas.length,
+          });
+        } else if (l.tipo === 'credito') {
+          // Crédito sem grupoId (caso raro, à vista) — trata como cheio
+          const data = _dataLanc(l);
+          if (!passaFiltrosBasicos(l, data)) continue;
+          itens.push({
+            l, ehCompraCheia: true,
+            valor: l.valorTotal || _valorLanc(l),
+            data, status: _statusLanc(l),
+          });
+        } else {
+          const data = _dataLanc(l);
+          if (!passaFiltrosBasicos(l, data)) continue;
+          itens.push({
+            l, ehCompraCheia: false,
+            valor: _valorLanc(l), data, status: _statusLanc(l),
+          });
+        }
+      }
+    }
+
+    return itens;
   }
 
   function _fmtDataBR(iso) {
@@ -1747,32 +1840,37 @@ const App = (() => {
     const f = state.analiseFiltros;
 
     const allLancs = await DB.getAllLancamentos();
-    const lancs = _aplicarFiltrosAnalise(allLancs);
+    const itens = _aplicarFiltrosAnalise(allLancs);
 
-    // ── Cálculos ──
-    const totalEntradas = lancs.filter(l => l.tipo === 'entrada')
-      .reduce((s,l) => s + _valorLanc(l), 0);
+    // ── Cálculos com breakdown efetuado/previsto ──
+    // Helper: soma valor de itens que casam predicado, separando por status
+    const somar = (pred) => {
+      let efet = 0, prev = 0;
+      for (const it of itens) {
+        if (!pred(it)) continue;
+        if (it.status === 'efetuado') efet += it.valor;
+        else prev += it.valor;
+      }
+      return {efet, prev, total: efet + prev};
+    };
 
-    const saidasDebito = lancs.filter(l =>
-      l.tipo === 'debito' || (l.tipo === 'fixo' && l.pagamento === 'debito')
-    ).reduce((s,l) => s + _valorLanc(l), 0);
+    const ent = somar(it => it.l.tipo === 'entrada');
+    const deb = somar(it => it.l.tipo === 'debito' || (it.l.tipo === 'fixo' && it.l.pagamento === 'debito'));
+    const cred = somar(it => it.l.tipo === 'credito' || (it.l.tipo === 'fixo' && it.l.pagamento === 'credito'));
 
-    const saidasCredito = lancs.filter(l =>
-      l.tipo === 'credito' || (l.tipo === 'fixo' && l.pagamento === 'credito')
-    ).reduce((s,l) => s + _valorLanc(l), 0);
+    const totalSaidas = deb.total + cred.total;
+    const balanco = ent.total - totalSaidas;
+    const balancoEfet = ent.efet - (deb.efet + cred.efet);
 
-    const totalSaidas = saidasDebito + saidasCredito;
-    const balanco = totalEntradas - totalSaidas;
-
-    // Por categoria (saídas)
+    // Por categoria (saídas — todas)
     const catTotals = {}, subCatTotals = {};
-    lancs.filter(l => ['debito','credito','fixo'].includes(l.tipo)).forEach(l => {
-      if (!l.categoriaId) return;
-      const v = _valorLanc(l);
-      catTotals[l.categoriaId] = (catTotals[l.categoriaId]||0) + v;
-      const k = `${l.categoriaId}__${l.subcat||''}`;
-      subCatTotals[k] = (subCatTotals[k]||0) + v;
-    });
+    for (const it of itens) {
+      if (!['debito','credito','fixo'].includes(it.l.tipo)) continue;
+      if (!it.l.categoriaId) continue;
+      catTotals[it.l.categoriaId] = (catTotals[it.l.categoriaId]||0) + it.valor;
+      const k = `${it.l.categoriaId}__${it.l.subcat||''}`;
+      subCatTotals[k] = (subCatTotals[k]||0) + it.valor;
+    }
 
     const catItems = Object.entries(catTotals)
       .map(([id,val]) => ({cat: getCatById(parseInt(id)), val}))
@@ -1807,6 +1905,15 @@ const App = (() => {
     const catChips = f.catFilter.map((fi,idx) => `<span class="filtro-chip" onclick="App._analiseRemoveCat(${idx})">${fi.label} ✕</span>`).join('');
     const algumFiltroSec = f.tipos.length || f.pagamentos.length || f.catFilter.length;
 
+    // Helper visual de linha de breakdown (efetuado/previsto)
+    const renderBreakdown = (data, color, isEntrada=false) => {
+      const sinal = isEntrada ? '' : '';
+      return `
+        <div class="resumo-row" style="padding-left:28px"><span class="resumo-label" style="font-size:11px;color:var(--text3)">↳ Efetuado</span><span class="resumo-val" style="font-size:12px;color:var(--text2)">${fmtMoney(data.efet)}</span></div>
+        <div class="resumo-row" style="padding-left:28px"><span class="resumo-label" style="font-size:11px;color:var(--text3)">↳ Previsto</span><span class="resumo-val" style="font-size:12px;color:var(--text3)">${fmtMoney(data.prev)}</span></div>
+      `;
+    };
+
     // ── HTML ──
     el.innerHTML = `
       <style>
@@ -1814,13 +1921,16 @@ const App = (() => {
         .filtro-btn{padding:8px 14px;border-radius:14px;border:0.5px solid var(--border2);background:var(--bg3);color:var(--text2);font-size:12px;font-weight:500;cursor:pointer;font-family:'DM Sans',sans-serif;display:inline-flex;align-items:center;gap:6px}
         .filtro-btn.active{background:var(--accent-dim);border-color:var(--accent);color:var(--accent2)}
         .data-input{flex:1;padding:9px 10px;background:var(--bg4);border:0.5px solid var(--border2);border-radius:8px;color:var(--text);font-size:13px;font-family:'DM Mono',monospace}
-        .resumo-row{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:0.5px solid var(--border)}
+        .resumo-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:0.5px solid var(--border)}
         .resumo-row:last-child{border-bottom:0}
         .resumo-label{font-size:13px;color:var(--text2)}
         .resumo-val{font-size:14px;font-weight:600;font-family:'DM Mono',monospace}
         .lanc-row-mini{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:0.5px solid var(--border)}
         .lanc-row-mini:last-child{border-bottom:0}
         .lanc-emoji{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0}
+        .toggle-pill{display:inline-flex;background:var(--bg4);border:0.5px solid var(--border2);border-radius:14px;padding:2px;cursor:pointer}
+        .toggle-pill > div{padding:6px 12px;font-size:11px;font-weight:500;border-radius:12px;color:var(--text3);transition:all 0.15s}
+        .toggle-pill > div.active{background:var(--accent);color:#fff}
       </style>
 
       <!-- Filtros: período -->
@@ -1840,13 +1950,13 @@ const App = (() => {
         </div>
       </div>
 
-      <!-- Filtros: tipo / pagamento / categoria -->
+      <!-- Filtros: tipo / pagamento / categoria + modo parcelas -->
       <div class="card" style="padding:16px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
           <div class="section-label" style="padding:0;margin:0">Filtros</div>
           ${algumFiltroSec ? `<span style="font-size:11px;color:var(--red);cursor:pointer" onclick="App._analiseLimparFiltros()">Limpar tudo</span>` : ''}
         </div>
-        <div style="display:flex;flex-wrap:wrap;gap:6px">
+        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px">
           <button class="filtro-btn ${f.tipos.length?'active':''}" onclick="App._analiseAbrirTipo()">
             🏷️ Tipo${f.tipos.length?` (${f.tipos.length})`:''}
           </button>
@@ -1857,22 +1967,39 @@ const App = (() => {
             🔖 Categoria${f.catFilter.length?` (${f.catFilter.length})`:''}
           </button>
         </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding-top:10px;border-top:0.5px solid var(--border)">
+          <span style="font-size:12px;color:var(--text2)">Compras parceladas</span>
+          <div class="toggle-pill" onclick="App._analiseToggleParcelas()">
+            <div class="${f.mostrarParcelas?'active':''}">Separadas</div>
+            <div class="${!f.mostrarParcelas?'active':''}">Cheias</div>
+          </div>
+        </div>
         ${algumFiltroSec ? `<div style="margin-top:10px;display:flex;flex-wrap:wrap">${tiposChips}${pagChips}${catChips}</div>` : ''}
       </div>
 
       <!-- Resumo geral -->
       <div class="card" style="padding:18px">
         <div class="section-label" style="padding:0;margin-bottom:12px">Resumo</div>
-        <div class="resumo-row"><span class="resumo-label">Total de entradas</span><span class="resumo-val" style="color:var(--green)">${fmtMoney(totalEntradas)}</span></div>
+
+        <div class="resumo-row"><span class="resumo-label">Total de entradas</span><span class="resumo-val" style="color:var(--green)">${fmtMoney(ent.total)}</span></div>
+        ${renderBreakdown(ent, 'var(--green)', true)}
+
         <div class="resumo-row"><span class="resumo-label">Total de saídas</span><span class="resumo-val" style="color:var(--red)">-${fmtMoney(totalSaidas)}</span></div>
-        <div class="resumo-row" style="padding-left:14px"><span class="resumo-label" style="font-size:12px;color:var(--text3)">↳ Saídas no débito</span><span class="resumo-val" style="font-size:13px;color:var(--text2)">${fmtMoney(saidasDebito)}</span></div>
-        <div class="resumo-row" style="padding-left:14px"><span class="resumo-label" style="font-size:12px;color:var(--text3)">↳ Saídas no crédito</span><span class="resumo-val" style="font-size:13px;color:var(--text2)">${fmtMoney(saidasCredito)}</span></div>
+        <div class="resumo-row" style="padding-left:14px"><span class="resumo-label" style="font-size:12px;color:var(--text3)">↳ Saídas no débito</span><span class="resumo-val" style="font-size:13px;color:var(--text2)">${fmtMoney(deb.total)}</span></div>
+        ${renderBreakdown(deb, 'var(--red)')}
+        <div class="resumo-row" style="padding-left:14px"><span class="resumo-label" style="font-size:12px;color:var(--text3)">↳ Saídas no crédito</span><span class="resumo-val" style="font-size:13px;color:var(--text2)">${fmtMoney(cred.total)}</span></div>
+        ${renderBreakdown(cred, 'var(--red)')}
+
         <div style="height:0.5px;background:var(--border2);margin:6px 0"></div>
         <div class="resumo-row">
           <span class="resumo-label" style="font-size:14px;font-weight:600;color:var(--text)">Balanço</span>
           <span class="resumo-val" style="font-size:16px;color:${balanco>=0?'var(--green)':'var(--red)'}">${balanco>=0?'':'-'}${fmtMoney(Math.abs(balanco))}</span>
         </div>
-        <div style="font-size:11px;color:var(--text3);margin-top:8px;text-align:center">${lancs.length} lançamento${lancs.length===1?'':'s'} no filtro</div>
+        <div class="resumo-row" style="padding-left:14px">
+          <span class="resumo-label" style="font-size:12px;color:var(--text3)">↳ Balanço efetuado</span>
+          <span class="resumo-val" style="font-size:13px;color:${balancoEfet>=0?'var(--green)':'var(--red)'}">${balancoEfet>=0?'':'-'}${fmtMoney(Math.abs(balancoEfet))}</span>
+        </div>
+        <div style="font-size:11px;color:var(--text3);margin-top:8px;text-align:center">${itens.length} ${f.mostrarParcelas?'lançamento'+(itens.length===1?'':'s'):'item'+(itens.length===1?'':'ns')} no filtro</div>
       </div>
 
       <!-- Por categoria -->
@@ -1920,35 +2047,42 @@ const App = (() => {
       <!-- Lista de lançamentos (recolhível) -->
       <div class="card" style="padding:18px">
         <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="App._analiseToggleLista()">
-          <div class="section-label" style="padding:0;margin:0">Lançamentos (${lancs.length})</div>
+          <div class="section-label" style="padding:0;margin:0">Lançamentos (${itens.length})</div>
           <span style="font-size:12px;color:var(--accent2)">${state.analiseListaAberta?'Ocultar ▲':'Ver lançamentos ▼'}</span>
         </div>
         ${state.analiseListaAberta ? `<div style="margin-top:12px">${
-          lancs.length===0 ? `<div style="text-align:center;color:var(--text3);font-size:13px;padding:14px 0">Nenhum lançamento</div>` :
-          [...lancs].sort((a,b)=>{
-            const da = _dataLanc(a)||'', db = _dataLanc(b)||'';
+          itens.length===0 ? `<div style="text-align:center;color:var(--text3);font-size:13px;padding:14px 0">Nenhum lançamento</div>` :
+          [...itens].sort((a,b)=>{
+            const da = a.data||'', db = b.data||'';
             return db.localeCompare(da);
-          }).map(l => {
+          }).map(it => {
+            const l = it.l;
             const cat = getCatById(l.categoriaId);
             const cor = cat?.cor || 'var(--text3)';
             const emoji = cat?.emoji || '•';
-            const data = _dataLanc(l);
-            const v = _valorLanc(l);
             const isEntrada = l.tipo === 'entrada';
             const valColor = isEntrada ? 'var(--green)' : 'var(--red)';
             const sinal = isEntrada ? '' : '-';
             const desc = l.descricao || cat?.nome || '—';
             const subInfo = l.subcat ? ` · ${l.subcat}` : '';
-            const parcInfo = l.tipo==='credito' && l.totalParcelas>1 ? ` · ${l.parcela}/${l.totalParcelas}` : '';
+            let parcInfo = '';
+            if (l.tipo==='credito' && l.totalParcelas>1) {
+              parcInfo = it.ehCompraCheia ? ` · ${it.totalParcelas||l.totalParcelas}x` : ` · ${l.parcela}/${l.totalParcelas}`;
+            }
             const cartaoInfo = l.cartaoId ? ` · ${getCartaoById(l.cartaoId)?.nome||''}` : '';
             const tipoTag = l.tipo==='entrada'?'Entrada':l.tipo==='debito'?'Débito':l.tipo==='credito'?'Crédito':'Fixo';
+            const statusBadge = it.status==='efetuado'
+              ? `<span style="font-size:9px;padding:2px 5px;background:var(--green-dim);color:var(--green);border-radius:4px;font-weight:500">EFET.</span>`
+              : `<span style="font-size:9px;padding:2px 5px;background:var(--bg4);color:var(--text3);border-radius:4px;font-weight:500">PREV.</span>`;
             return `<div class="lanc-row-mini">
               <div class="lanc-emoji" style="background:${cor}22;color:${cor}">${emoji}</div>
               <div style="flex:1;min-width:0">
-                <div style="font-size:13px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${desc}</div>
-                <div style="font-size:10px;color:var(--text3);margin-top:2px">${_fmtDataBR(data)} · ${tipoTag}${subInfo}${parcInfo}${cartaoInfo}</div>
+                <div style="font-size:13px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:6px">
+                  <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${desc}</span>${statusBadge}
+                </div>
+                <div style="font-size:10px;color:var(--text3);margin-top:2px">${_fmtDataBR(it.data)} · ${tipoTag}${subInfo}${parcInfo}${cartaoInfo}</div>
               </div>
-              <div style="font-size:13px;font-weight:500;font-family:'DM Mono',monospace;color:${valColor};flex-shrink:0">${sinal}${fmtMoney(v)}</div>
+              <div style="font-size:13px;font-weight:500;font-family:'DM Mono',monospace;color:${valColor};flex-shrink:0">${sinal}${fmtMoney(it.valor)}</div>
             </div>`;
           }).join('')
         }</div>` : ''}
@@ -2003,6 +2137,11 @@ const App = (() => {
 
   function _analiseToggleLista() {
     state.analiseListaAberta = !state.analiseListaAberta;
+    renderRelatorios();
+  }
+
+  function _analiseToggleParcelas() {
+    state.analiseFiltros.mostrarParcelas = !state.analiseFiltros.mostrarParcelas;
     renderRelatorios();
   }
 
@@ -3518,7 +3657,7 @@ const App = (() => {
     _salvar,_deletar,_deletarTodasParcelas,_deletarUmaParcela,_deletarFixoTemplate,_deletarUmFixo,
     _editarSoEste,_editarTodosSeguintes,_onFixoDiaChange,
     setRelTab,_setRelPeriodo,
-    _analiseSetData,_analisePeriodoRapido,_analiseLimparFiltros,_analiseToggleLista,
+    _analiseSetData,_analisePeriodoRapido,_analiseLimparFiltros,_analiseToggleLista,_analiseToggleParcelas,
     _analiseRemoveTipo,_analiseRemovePag,_analiseRemoveCat,
     _analiseAbrirTipo,_analiseToggleTipo,
     _analiseAbrirPagamento,_analiseTogglePag,
