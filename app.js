@@ -493,7 +493,7 @@ const App = (() => {
               Período <span style="color:var(--text2)">${strI} → ${strF}</span><br>
               Vence <span style="color:var(--text2)">${strV}</span>
             </div>
-            <div class="cartao-mini-bar" style="margin-top:6px"><div class="cartao-mini-fill" style="width:${c.limite?Math.min((valorFat/c.limite)*100,100).toFixed(0):0}%;background:${c.cor}"></div></div>
+            <div class="cartao-mini-bar" style="margin-top:6px"><div class="cartao-mini-fill" style="width:${(()=>{const hoje=new Date();const h=new Date(hoje.getFullYear(),hoje.getMonth(),hoje.getDate());const ini=new Date(dInicio.getFullYear(),dInicio.getMonth(),dInicio.getDate());const fim=new Date(dFechAtual.getFullYear(),dFechAtual.getMonth(),dFechAtual.getDate());const total=fim-ini;const passado=h-ini;return total<=0?0:Math.max(0,Math.min(100,(passado/total)*100)).toFixed(1);})()}%;background:${c.cor}"></div></div>
           </div>
         </div>
         <div class="cartao-chip-vals">
