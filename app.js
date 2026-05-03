@@ -1738,15 +1738,27 @@ const App = (() => {
     const MONTHS_PT = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
     const labelMesFatura = `${MONTHS_PT[mmFat-1]} de ${yyFat}`;
 
-    const statusColor = pago ? '#4ade80' : (valorFatura > 0 ? '#f59e0b' : '#6b7280');
-    let statusLabel, statusBg;
-    if (pago) { statusLabel = '✓ Paga'; statusBg = '#4ade8020'; }
-    else if (!isFaturaAtual && mesAnoNum(mesAnoFatKey) > mesAnoNum(mesAnoFatAtual)) {
-      statusLabel = valorFatura > 0 ? '📅 Programada' : '– Sem lançamentos';
-      statusBg = valorFatura > 0 ? '#a78bfa20' : '#6b728020';
+    // Status: Paga > Programada (futura) > Vencida (venc<hoje) > Fechada (período fim<hoje) > Aberta
+    const hojeMid = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate());
+    const dFechMid = new Date(dFech.getFullYear(), dFech.getMonth(), dFech.getDate());
+    const dVencMid = new Date(dVenc.getFullYear(), dVenc.getMonth(), dVenc.getDate());
+    const isFutura = mesAnoNum(mesAnoFatKey) > mesAnoNum(mesAnoFatAtual);
+    const periodoFechado = hojeMid > dFechMid;
+    const venceuSemPagar = hojeMid > dVencMid;
+
+    let statusLabel, statusBg, statusColor;
+    if (pago) {
+      statusLabel = '✓ Paga'; statusBg = '#4ade8020'; statusColor = '#4ade80';
+    } else if (valorFatura === 0 && !pago) {
+      statusLabel = '– Sem lançamentos'; statusBg = '#6b728020'; statusColor = '#6b7280';
+    } else if (isFutura) {
+      statusLabel = '📅 Programada'; statusBg = '#a78bfa20'; statusColor = '#a78bfa';
+    } else if (venceuSemPagar) {
+      statusLabel = '⚠ Vencida'; statusBg = '#ef444420'; statusColor = '#ef4444';
+    } else if (periodoFechado) {
+      statusLabel = '🔒 Fechada'; statusBg = '#3b82f620'; statusColor = '#3b82f6';
     } else {
-      statusLabel = valorFatura > 0 ? '⏳ Aberta' : '– Sem lançamentos';
-      statusBg = valorFatura > 0 ? '#f59e0b20' : '#6b728020';
+      statusLabel = '⏳ Aberta'; statusBg = '#f59e0b20'; statusColor = '#f59e0b';
     }
 
     // ── 2. Histórico (gráfico) ──
