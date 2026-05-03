@@ -559,29 +559,7 @@ select option{background:var(--bg3)}
 .modal-btns .btn-save{background:var(--accent);color:#fff}
 .modal-btns .btn-save:active,.modal-btns .btn-cancel:active{transform:scale(0.98)}
 
-/* ── Bottom Sheet: Detalhe do Cartão ── */
-.cartao-bs-overlay{
-  position:fixed;inset:0;background:#00000088;z-index:300;
-  opacity:0;pointer-events:none;transition:opacity 0.25s;
-}
-.cartao-bs-overlay.open{opacity:1;pointer-events:all}
-.cartao-bs{
-  position:fixed;bottom:0;left:0;right:0;max-width:430px;margin:0 auto;
-  background:var(--bg2);border-radius:20px 20px 0 0;
-  padding-bottom:calc(20px + var(--safe-bottom));
-  transform:translateY(100%);transition:transform 0.35s cubic-bezier(.32,.72,0,1);
-  z-index:301;max-height:92vh;display:flex;flex-direction:column;
-}
-.cartao-bs-overlay.open .cartao-bs{transform:translateY(0)}
-.cartao-bs-handle{
-  width:36px;height:4px;border-radius:2px;background:var(--border2);
-  margin:12px auto 0;flex-shrink:0;
-}
-.cartao-bs-header{
-  display:flex;align-items:center;gap:12px;padding:16px 20px 12px;flex-shrink:0;
-  border-bottom:0.5px solid var(--border);
-}
-.cartao-bs-scroll{flex:1;overflow-y:auto;padding:0 20px 8px;}
+/* ── Detalhe do Cartão (inline na aba Cartões) ── */
 .cartao-bs-section{margin-top:20px}
 .cartao-bs-section-title{
   font-size:11px;font-weight:600;letter-spacing:0.8px;
@@ -1037,15 +1015,6 @@ select option{background:var(--bg3)}
 <!-- MODAL -->
 <div class="modal-overlay" id="modal-overlay" onclick="App.closeModal(event)">
   <div class="modal" id="modal-content"></div>
-</div>
-
-<!-- Bottom Sheet Detalhe Cartão -->
-<div class="cartao-bs-overlay" id="cartao-bs-overlay" onclick="App._closeCartaoBS(event)">
-  <div class="cartao-bs" id="cartao-bs">
-    <div class="cartao-bs-handle"></div>
-    <div class="cartao-bs-header" id="cartao-bs-header"></div>
-    <div class="cartao-bs-scroll" id="cartao-bs-body"></div>
-  </div>
 </div>
 
 </div><!-- #app -->

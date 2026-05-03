@@ -21,6 +21,7 @@ const App = (() => {
     parcCatFilter: [],
     parcImpactoVisible: true,
     parcAbertos: new Set(),
+    cartaoExpandidoId: null,
     lancamentos: [],
     categorias: [],
     cartoes: [],
@@ -480,7 +481,7 @@ const App = (() => {
       const strI = dInicio.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'});
       const strF = dFechAtual.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'});
       const strV = dVencAtual.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'});
-      return `<div class="cartao-chip" style="cursor:pointer;padding:12px 14px" onclick="App._openCartaoBS(${c.id})">
+      return `<div class="cartao-chip" style="cursor:pointer;padding:12px 14px" onclick="App._abrirCartaoNaAba(${c.id})">
         <div class="cartao-band" style="background:${c.cor}"></div>
         <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0">
           ${getBancoIconHtml(c.nome,32)||`<div style="width:32px;height:32px;border-radius:8px;background:${c.cor}22;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0">💳</div>`}
@@ -1615,20 +1616,25 @@ const App = (() => {
       const pct = c.limite ? Math.min((totalComprometido / c.limite) * 100, 100) : 0;
       const disp = Math.max((c.limite || 0) - totalComprometido, 0);
       const iconHtml = getBancoIconHtml(c.nome, 28);
-      return `<div style="margin-bottom:12px;background:var(--bg3);border-radius:14px;padding:14px;cursor:pointer;transition:opacity 0.15s;active:opacity:0.7" onclick="App._openCartaoBS(${c.id})" ontouchstart="this.style.opacity='0.7'" ontouchend="this.style.opacity='1'">
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
-          ${iconHtml || `<div style="width:28px;height:28px;border-radius:7px;background:${c.cor}22;display:flex;align-items:center;justify-content:center;font-size:13px">💳</div>`}
-          <span style="font-size:15px;font-weight:600;color:${c.cor}">${c.nome}</span>
-          <span style="margin-left:auto;font-size:13px;font-family:'DM Mono',monospace;color:var(--text2)">${fmtMoney(totalComprometido)} <span style="color:var(--text3)">/ ${fmtMoney(c.limite||0)}</span></span>
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="var(--text3)" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+      const isExpanded = state.cartaoExpandidoId === c.id;
+      const chevronRot = isExpanded ? 'transform:rotate(90deg)' : '';
+      return `<div id="cartao-row-${c.id}" style="margin-bottom:12px;background:var(--bg3);border-radius:14px;overflow:hidden">
+        <div style="padding:14px;cursor:pointer;transition:opacity 0.15s" onclick="App._toggleCartaoExpandido(${c.id})" ontouchstart="this.style.opacity='0.7'" ontouchend="this.style.opacity='1'">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+            ${iconHtml || `<div style="width:28px;height:28px;border-radius:7px;background:${c.cor}22;display:flex;align-items:center;justify-content:center;font-size:13px">💳</div>`}
+            <span style="font-size:15px;font-weight:600;color:${c.cor}">${c.nome}</span>
+            <span style="margin-left:auto;font-size:13px;font-family:'DM Mono',monospace;color:var(--text2)">${fmtMoney(totalComprometido)} <span style="color:var(--text3)">/ ${fmtMoney(c.limite||0)}</span></span>
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="var(--text3)" stroke-width="2" style="transition:transform 0.2s;${chevronRot}"><polyline points="9 18 15 12 9 6"/></svg>
+          </div>
+          <div style="height:8px;background:var(--bg4);border-radius:4px;overflow:hidden;margin-bottom:6px">
+            <div style="height:100%;width:${pct}%;background:${c.cor};border-radius:4px"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between">
+            <span style="font-size:11px;color:var(--text3)">${pct.toFixed(1)}% comprometido</span>
+            <span style="font-size:11px;color:var(--text3)">${fmtMoney(disp)} disponível</span>
+          </div>
         </div>
-        <div style="height:8px;background:var(--bg4);border-radius:4px;overflow:hidden;margin-bottom:6px">
-          <div style="height:100%;width:${pct}%;background:${c.cor};border-radius:4px"></div>
-        </div>
-        <div style="display:flex;justify-content:space-between">
-          <span style="font-size:11px;color:var(--text3)">${pct.toFixed(1)}% comprometido</span>
-          <span style="font-size:11px;color:var(--text3)">${fmtMoney(disp)} disponível</span>
-        </div>
+        <div id="cartao-detalhe-${c.id}" style="display:${isExpanded?'block':'none'};padding:0 14px 14px;border-top:1px solid var(--bg4)"></div>
       </div>`;
     }));
 
@@ -1646,58 +1652,71 @@ const App = (() => {
     } else {
       parentEl.innerHTML = cardHtml;
     }
+
+    // Renderizar detalhe do cartão expandido (se houver)
+    if (state.cartaoExpandidoId) {
+      const c = getCartaoById(state.cartaoExpandidoId);
+      if (c) await _renderCartaoDetalhe(c);
+    }
   }
 
   function _setRelPeriodo(p){state.relPeriodo=p;renderRelatorios();}
 
-  /* ── Bottom Sheet: Detalhe do Cartão ── */
+  /* ── Detalhe do Cartão (inline na aba Cartões) ── */
   let _cartaoBSPeriodo = 6; // meses padrão
-  let _cartaoBSFaturaSel = null; // fatura selecionada no bottom sheet (mesAnoV); null = fatura atual
+  let _cartaoBSFaturaSel = null; // fatura selecionada (mesAnoV); null = fatura atual
 
-  function _closeCartaoBS(e) {
-    if (e && e.target !== document.getElementById('cartao-bs-overlay')) return;
-    document.getElementById('cartao-bs-overlay').classList.remove('open');
+  // Toggle: expande o cartão clicado (e fecha qualquer outro). Se já estiver aberto, colapsa.
+  async function _toggleCartaoExpandido(cartaoId) {
+    if (state.cartaoExpandidoId === cartaoId) {
+      state.cartaoExpandidoId = null;
+    } else {
+      state.cartaoExpandidoId = cartaoId;
+      _cartaoBSFaturaSel = null;       // sempre começa na fatura atual
+      _cartaoBSPeriodo = 6;            // reset período
+    }
+    await renderLimiteCartoes(document.getElementById('rel-content'));
+    // Scroll suave até o cartão expandido
+    if (state.cartaoExpandidoId) {
+      setTimeout(() => {
+        const row = document.getElementById(`cartao-row-${state.cartaoExpandidoId}`);
+        if (row) row.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 50);
+    }
   }
 
-  async function _openCartaoBS(cartaoId) {
-    const overlay = document.getElementById('cartao-bs-overlay');
-    const header  = document.getElementById('cartao-bs-header');
-    const body    = document.getElementById('cartao-bs-body');
-    const c = getCartaoById(cartaoId);
-    if (!c) return;
-    _cartaoBSFaturaSel = null; // sempre começa na fatura atual
-
-    // Header
-    const iconHtml = getBancoIconHtml(c.nome, 32);
-    header.innerHTML = `
-      ${iconHtml || `<div style="width:32px;height:32px;border-radius:9px;background:${c.cor}22;display:flex;align-items:center;justify-content:center;font-size:16px">💳</div>`}
-      <div style="flex:1">
-        <div style="font-size:17px;font-weight:700;color:${c.cor}">${c.nome}</div>
-        <div style="font-size:11px;color:var(--text3);margin-top:1px">Limite total: ${fmtMoney(c.limite||0)}</div>
-      </div>
-      <button onclick="App._closeCartaoBS({target:document.getElementById('cartao-bs-overlay')})"
-        style="width:30px;height:30px;border-radius:50%;border:none;background:var(--bg4);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0">
-        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="var(--text2)" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-      </button>`;
-
-    body.innerHTML = '<div style="padding:40px 0;text-align:center;color:var(--text3);font-size:13px">Carregando…</div>';
-    overlay.classList.add('open');
-
-    await _renderCartaoBSBody(c);
+  // Abre direto um cartão específico (vindo da home). Não-toggle: força abrir.
+  async function _abrirCartaoNaAba(cartaoId) {
+    state.cartaoExpandidoId = cartaoId;
+    _cartaoBSFaturaSel = null;
+    _cartaoBSPeriodo = 6;
+    state.relTab = 'cartoes';
+    showScreen('screen-relatorios');
+    // showScreen → renderRelatorios → renderLimiteCartoes (vai pegar cartaoExpandidoId)
+    // Atualizar tabs visualmente
+    ['mensal','evolucao','cartoes','parcelamentos'].forEach(t =>
+      document.getElementById('rt-'+t)?.classList.toggle('active', t==='cartoes')
+    );
+    const nav = document.getElementById('rel-month-nav');
+    if (nav) nav.style.display = 'none';
+    // Scroll suave até o cartão após render
+    setTimeout(() => {
+      const row = document.getElementById(`cartao-row-${cartaoId}`);
+      if (row) row.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 200);
   }
 
-  async function _renderCartaoBSBody(c) {
-    const body = document.getElementById('cartao-bs-body');
+  async function _renderCartaoDetalhe(c) {
+    const body = document.getElementById(`cartao-detalhe-${c.id}`);
+    if (!body) return;
     const allLancs = await DB.getAllLancamentos();
     const hoje = new Date();
 
     // ── Calcular fatura ATUAL pela regra oficial ──
-    // Fatura atual = aquela cujo período (diaF/mesV-1 a diaF-1/mesV) inclui hoje
     const { mesAnoV: mesAnoFatAtual } = faturaAtual(c);
-    // Fatura SELECIONADA: por padrão a atual; pode ser sobrescrita pelo clique no gráfico
     const mesAnoFatKey = _cartaoBSFaturaSel || mesAnoFatAtual;
     const { dInicio, dFim, dVenc } = periodoFatura(mesAnoFatKey, c);
-    const dFech = dFim; // "fechamento" exibido = último dia do período
+    const dFech = dFim;
     const isFaturaAtual = mesAnoFatKey === mesAnoFatAtual;
 
     // ── 1. Fatura atual ──
@@ -1705,11 +1724,8 @@ const App = (() => {
     allLancs.filter(l => l.autoFatura && l.faturaCartaoId && l.pago && l.mesAno)
             .forEach(l => _faturasPagas.add(l.faturaCartaoId + '|' + l.mesAno));
 
-    // mesAnoFatKey já é o mês do vencimento (nome da fatura)
     const [mmFat, yyFat] = mesAnoFatKey.split('-').map(Number);
 
-    // Valor da fatura = soma dos créditos cuja FATURA (mesPagamento) é a atual
-    // Estornos têm valorParcela negativo → subtraem naturalmente
     let valorFatura = 0;
     allLancs.filter(l => !l.autoFatura && l.tipo === 'credito' && l.cartaoId === c.id &&
                          (l.mesPagamento || l.mesAno) === mesAnoFatKey)
@@ -1717,7 +1733,6 @@ const App = (() => {
     allLancs.filter(l => !l.autoFatura && l.tipo === 'fixo' && l.pago && l.cartaoId === c.id &&
                          (l.mesPagamento || l.mesAno) === mesAnoFatKey)
             .forEach(l => { valorFatura += (l.valor || 0); });
-    // Status pago: via fatura automática
     const faturasCartao = allLancs.filter(l => l.autoFatura && l.faturaCartaoId === c.id);
     const faturaAutoAtual = faturasCartao.find(l => l.mesAno === mesAnoFatKey);
     const pago = faturaAutoAtual ? !!faturaAutoAtual.pago : false;
@@ -1725,7 +1740,6 @@ const App = (() => {
     const strFech = dFech.toLocaleDateString('pt-BR',{day:'2-digit',month:'short'});
     const strVenc = dVenc.toLocaleDateString('pt-BR',{day:'2-digit',month:'short'});
 
-    // Label da fatura = mês do vencimento (nome oficial)
     const MONTHS_PT = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
     const labelMesFatura = `${MONTHS_PT[mmFat-1]} de ${yyFat}`;
 
@@ -1741,12 +1755,7 @@ const App = (() => {
     }
 
     // ── 2. Histórico (gráfico) ──
-    // Eixo X = faturas (mesAnoV). Sempre começa na fatura ATUAL e mostra:
-    //   • à esquerda: (_cartaoBSPeriodo - 1) faturas passadas
-    //   • à direita: todas as faturas FUTURAS que tenham parcelas cadastradas
-    // Isso permite ver compromissos futuros sem precisar configurar período.
     const meses = _cartaoBSPeriodo;
-    // Descobrir o mes mais distante no futuro com parcelas deste cartão
     const futurosKeys = allLancs
       .filter(l => !l.autoFatura && l.tipo === 'credito' && l.cartaoId === c.id)
       .map(l => l.mesPagamento || l.mesAno)
@@ -1756,10 +1765,8 @@ const App = (() => {
       : mesAnoFatAtual;
     const [mmAtu, yyAtu] = mesAnoFatAtual.split('-').map(Number);
     const [mmMax, yyMax] = maiorFuturo.split('-').map(Number);
-    // Quantos meses no futuro a partir da fatura atual
     const offsetFuturoMax = (yyMax - yyAtu) * 12 + (mmMax - mmAtu);
     const histDados = [];
-    // Primeiro as passadas + atual
     for (let i = meses - 1; i >= 0; i--) {
       const dRef = new Date(yyAtu, (mmAtu - 1) - i, 1);
       const keyVenc = mesAnoStr(dRef.getMonth(), dRef.getFullYear());
@@ -1778,7 +1785,6 @@ const App = (() => {
         isFutura: false,
       });
     }
-    // Depois as futuras com parcelas
     for (let i = 1; i <= offsetFuturoMax; i++) {
       const dRef = new Date(yyAtu, (mmAtu - 1) + i, 1);
       const keyVenc = mesAnoStr(dRef.getMonth(), dRef.getFullYear());
@@ -1789,7 +1795,7 @@ const App = (() => {
       allLancs.filter(l => !l.autoFatura && l.tipo === 'fixo' && l.pago && l.cartaoId === c.id &&
                            (l.mesPagamento || l.mesAno) === keyVenc)
               .forEach(l => { valorRef += (l.valor || 0); });
-      if (valorRef === 0) continue; // só mostra futuras se tiverem valor
+      if (valorRef === 0) continue;
       histDados.push({
         label: dRef.toLocaleDateString('pt-BR',{month:'short'}).replace('.',''),
         valor: valorRef,
@@ -1814,8 +1820,7 @@ const App = (() => {
       </div>`;
     }).join('');
 
-    // ── 3. Transações da fatura atual ──
-    // Parcelas (crédito) E gastos fixos pagos no crédito cuja FATURA (mesPagamento) é a atual
+    // ── 3. Transações da fatura selecionada ──
     const txAtual = allLancs.filter(l =>
       !l.autoFatura && l.cartaoId === c.id &&
       (l.mesPagamento || l.mesAno) === mesAnoFatKey &&
@@ -1826,7 +1831,6 @@ const App = (() => {
       ? `<div style="padding:16px 0;text-align:center;color:var(--text3);font-size:13px">Nenhuma transação nesta fatura</div>`
       : txAtual.map(l => {
           const cat = getCatById(l.categoriaId);
-          // Ícone: emoji da subcategoria ou categoria
           let emoji = cat?.emoji || '💳';
           if (l.subcat && cat?.subcats) {
             const sub = cat.subcats.find(s => (typeof s==='object' ? s.nome : s) === l.subcat);
@@ -1835,9 +1839,7 @@ const App = (() => {
           const cor = c.cor;
           const isFixoCred = l.tipo === 'fixo';
           const isEstornoCred = l.tipo === 'credito' && l.estorno;
-          // Nome: descrição > subcat > cat
           const nome = l.descricao || l.subcat || cat?.nome || 'Compra';
-          // Detalhe: "subcat · data da compra · parcela X/Y" (ou "Gasto fixo" pra fixo)
           let sub = '';
           if (l.subcat && cat) sub = `${cat.nome} › ${l.subcat}`;
           else if (cat) sub = cat.nome;
@@ -1858,7 +1860,7 @@ const App = (() => {
             : Math.abs(l.valorParcela || 0);
           const sinal = isEstornoCred ? '+' : '-';
           const corValor = isEstornoCred ? 'var(--green)' : cor;
-          return `<div class="feed-item" onclick="App.editLancamento(${l.id})" style="margin:0 0 4px;border-radius:10px">
+          return `<div class="feed-item" onclick="event.stopPropagation();App.editLancamento(${l.id})" style="margin:0 0 4px;border-radius:10px">
             <div class="feed-icon" style="background:${cor}22">
               <span style="font-size:17px;line-height:1">${emoji}</span>
             </div>
@@ -1908,7 +1910,7 @@ const App = (() => {
       </div>
 
       <!-- Transações -->
-      <div class="cartao-bs-section" style="margin-bottom:20px">
+      <div class="cartao-bs-section" style="margin-bottom:8px">
         <div class="cartao-bs-section-title">Transações · ${labelMesFatura}</div>
         ${txHtml}
       </div>
@@ -1918,18 +1920,16 @@ const App = (() => {
   async function _setCartaoBSPeriodo(cartaoId, meses) {
     _cartaoBSPeriodo = meses;
     const c = getCartaoById(cartaoId);
-    if (c) await _renderCartaoBSBody(c);
+    if (c) await _renderCartaoDetalhe(c);
   }
 
   async function _setCartaoBSFatura(cartaoId, mesAnoV) {
     _cartaoBSFaturaSel = mesAnoV;
     const c = getCartaoById(cartaoId);
     if (c) {
-      await _renderCartaoBSBody(c);
-      // Scroll suave para a seção de transações
-      const body = document.getElementById('cartao-bs-body');
-      const transSec = body?.querySelector('.cartao-bs-section .cartao-bs-section-title');
-      // Procurar a seção de transações
+      await _renderCartaoDetalhe(c);
+      // Scroll suave para a seção de transações dentro do detalhe
+      const body = document.getElementById(`cartao-detalhe-${cartaoId}`);
       const titles = body?.querySelectorAll('.cartao-bs-section-title');
       if (titles) {
         for (const t of titles) {
@@ -3058,7 +3058,7 @@ const App = (() => {
     setCfgTab,_toggleCatRow,
     _openAddCat,_openEditCat,_deleteCategoria,_openAddSubcat,_openEditSubcat,_deleteSubcat,
     _openAddCartao,_editCartao,_deleteCartao,_updateCartao,
-    _openCartaoBS,_closeCartaoBS,_setCartaoBSPeriodo,_setCartaoBSFatura,
+    _toggleCartaoExpandido,_abrirCartaoNaAba,_setCartaoBSPeriodo,_setCartaoBSFatura,
     _exportar,_importar,_limpar,_setTema,
     openModal,closeModal,_selColor,_onCustomColor,
     _saveCategoria,_saveSubcat,_saveCartao,
