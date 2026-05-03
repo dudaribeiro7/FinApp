@@ -2121,30 +2121,17 @@ const App = (() => {
   }
 
   async function renderCfgCartoes(el){
-    const mesLancs=state.lancamentos;
-    const creditoPorCartao={};
-    state.cartoes.forEach(c=>creditoPorCartao[c.id]=0);
-    mesLancs.filter(l=>l.tipo==='credito').forEach(l=>{if(l.cartaoId)creditoPorCartao[l.cartaoId]=(creditoPorCartao[l.cartaoId]||0)+(l.valorParcela||0);});
-    mesLancs.filter(l=>l.tipo==='fixo'&&l.pago&&l.cartaoId).forEach(l=>{creditoPorCartao[l.cartaoId]=(creditoPorCartao[l.cartaoId]||0)+(l.valor||0);});
-
     el.innerHTML=state.cartoes.map(c=>{
-      const usado=creditoPorCartao[c.id]||0,pct=c.limite?Math.min((usado/c.limite)*100,100):0;
       return `<div class="cartao-cfg-card">
         <div class="cartao-cfg-header">
           ${getBancoIconHtml(c.nome,36)||`<div class="cartao-cfg-band" style="background:${c.cor}"></div>`}
           <div class="cartao-cfg-info"><div class="cartao-cfg-nome">${c.nome}</div><div class="cartao-cfg-datas">Fecha dia ${c.fechamento} · Vence dia ${c.vencimento}</div></div>
-          <div class="cartao-cfg-limit"><div class="cartao-cfg-limit-label">Limite usado</div><div class="cartao-cfg-limit-val" style="color:${c.cor}">${fmtMoney(usado)} / ${fmtMoney(c.limite||0)}</div></div>
         </div>
         <div class="cartao-cfg-body">
-          <div class="cartao-cfg-prog">
-            <div class="cartao-cfg-prog-row"><span class="cartao-cfg-prog-label">${pct.toFixed(1)}% do limite</span><span class="cartao-cfg-prog-val">${fmtMoney((c.limite||0)-usado)} disponível</span></div>
-            <div class="mini-prog-bar"><div class="mini-prog-fill" style="width:${pct}%;background:${c.cor}"></div></div>
-          </div>
           <div class="cartao-cfg-fields">
             <div><div class="cartao-cfg-field-label">Fechamento</div><input type="number" min="1" max="28" value="${c.fechamento}" onchange="App._updateCartao(${c.id},'fechamento',this.value)"></div>
             <div><div class="cartao-cfg-field-label">Vencimento</div><input type="number" min="1" max="31" value="${c.vencimento}" onchange="App._updateCartao(${c.id},'vencimento',this.value)"></div>
-            <div><div class="cartao-cfg-field-label">Limite total</div><input type="text" value="${(c.limite||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}" oninput="App._maskMoney(this)" onchange="App._updateCartao(${c.id},'limite',this.value)"></div>
-            <div><div class="cartao-cfg-field-label">Alerta (%)</div><input type="number" min="1" max="100" value="${c.alertaPct||80}" onchange="App._updateCartao(${c.id},'alertaPct',this.value)"></div>
+            <div style="grid-column:1/-1"><div class="cartao-cfg-field-label">Limite total</div><input type="text" value="${(c.limite||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}" oninput="App._maskMoney(this)" onchange="App._updateCartao(${c.id},'limite',this.value)"></div>
           </div>
           <div style="display:flex;gap:8px;margin-top:12px">
             <button class="action-btn secondary" style="margin:0;flex:1;padding:10px;font-size:13px" onclick="App._editCartao(${c.id})"><svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>Editar</button>
