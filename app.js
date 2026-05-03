@@ -1690,20 +1690,15 @@ const App = (() => {
     state.cartaoExpandidoId = cartaoId;
     _cartaoBSFaturaSel = null;
     _cartaoBSPeriodo = 6;
-    state.relTab = 'cartoes';
-    showScreen('screen-relatorios');
-    // showScreen → renderRelatorios → renderLimiteCartoes (vai pegar cartaoExpandidoId)
-    // Atualizar tabs visualmente
-    ['mensal','evolucao','cartoes','parcelamentos'].forEach(t =>
-      document.getElementById('rt-'+t)?.classList.toggle('active', t==='cartoes')
-    );
-    const nav = document.getElementById('rel-month-nav');
-    if (nav) nav.style.display = 'none';
+    // Atualiza state + classes + esconde nav de mês (setRelTab faz tudo isso)
+    setRelTab('cartoes');
+    // Navega pra tela de relatórios (vai re-renderizar, mas state.cartaoExpandidoId já está setado)
+    gotoScreen('screen-relatorios');
     // Scroll suave até o cartão após render
     setTimeout(() => {
       const row = document.getElementById(`cartao-row-${cartaoId}`);
       if (row) row.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }, 200);
+    }, 250);
   }
 
   async function _renderCartaoDetalhe(c) {
