@@ -1872,51 +1872,6 @@ const App = (() => {
           </div>`;
         }).join('');
 
-    // ── 4. Parcelas em aberto — reutilizando lógica de renderParcelamentos ──
-    const creditos = allLancs.filter(l =>
-      l.tipo === 'credito' && l.totalParcelas > 1 && l.grupoId && l.cartaoId === c.id
-    );
-    const grupos = {};
-    creditos.forEach(l => {
-      if (!grupos[l.grupoId]) grupos[l.grupoId] = [];
-      grupos[l.grupoId].push(l);
-    });
-
-    const comprasParc = Object.values(grupos).map(parcelas => {
-      parcelas.sort((a,b) => (a.parcela||0) - (b.parcela||0));
-      const primeira = parcelas[0];
-      const n = primeira.totalParcelas || parcelas.length;
-      const valorParcela = primeira.valorParcela || 0;
-      const totalCompra = primeira.valorTotal || (valorParcela * n);
-      const pagas = parcelas.filter(p => isParcelaPaga(p.mesPagamento || p.mesAno, c)).length;
-      const restantes = n - pagas;
-      return { primeira, n, valorParcela, totalCompra, pagas, restantes, concluida: restantes === 0 };
-    }).filter(cp => !cp.concluida);
-
-    const parcHtml = comprasParc.length === 0
-      ? `<div style="padding:16px 0;text-align:center;color:var(--text3);font-size:13px">Nenhuma parcela em aberto</div>`
-      : comprasParc.map(cp => {
-          const { primeira, n, valorParcela, pagas, restantes } = cp;
-          const valRestante = valorParcela * restantes;
-          const pct = Math.round((pagas / n) * 100);
-          return `<div class="cartao-bs-parc">
-            <div class="cartao-bs-parc-top">
-              <div class="cartao-bs-parc-desc">${primeira.descricao||'Parcela'}</div>
-              <div class="cartao-bs-parc-vals">
-                <div class="cartao-bs-parc-mensal">${fmtMoney(Math.abs(valorParcela))}/mês</div>
-                <div class="cartao-bs-parc-restante">${fmtMoney(Math.abs(valRestante))} restante</div>
-              </div>
-            </div>
-            <div class="cartao-bs-parc-prog-row">
-              <span class="cartao-bs-parc-prog-label">${pagas}/${n} pagas</span>
-              <span class="cartao-bs-parc-prog-label">${restantes} restantes</span>
-            </div>
-            <div class="cartao-bs-mini-bar">
-              <div class="cartao-bs-mini-fill" style="width:${pct}%;background:${c.cor}"></div>
-            </div>
-          </div>`;
-        }).join('');
-
     body.innerHTML = `
       <!-- Fatura -->
       <div class="cartao-bs-section">
@@ -1953,15 +1908,9 @@ const App = (() => {
       </div>
 
       <!-- Transações -->
-      <div class="cartao-bs-section">
+      <div class="cartao-bs-section" style="margin-bottom:20px">
         <div class="cartao-bs-section-title">Transações · ${labelMesFatura}</div>
         ${txHtml}
-      </div>
-
-      <!-- Parcelas em aberto -->
-      <div class="cartao-bs-section" style="margin-bottom:20px">
-        <div class="cartao-bs-section-title">Parcelas em aberto</div>
-        ${parcHtml}
       </div>
     `;
   }
