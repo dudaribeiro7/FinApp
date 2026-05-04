@@ -12,7 +12,7 @@ const App = (() => {
     lancTab: 'todos',
     lancSubTab: null,
     lancCatFilter: [],
-    relTab: 'mensal',
+    relTab: 'analise',
     relPeriodo: 6,
     analiseFiltros: null, // {dataInicio, dataFim, tipos:[], pagamentos:[], catFilter:[], mostrarParcelas}
     analiseListaAberta: false,
@@ -285,8 +285,6 @@ const App = (() => {
     if (id==='screen-home') renderHome();
     if (id==='screen-lancamentos') renderLancamentos();
     if (id==='screen-relatorios') {
-      const el=document.getElementById('rel-month-label');
-      if(el) el.textContent=`${MONTHS[state.currentMonth]} ${state.currentYear}`;
       renderRelatorios();
     }
     if (id==='screen-perfil') renderPerfil();
@@ -316,7 +314,7 @@ const App = (() => {
     for (const c of state.cartoes) await atualizarFaturaFixa(c.id);
     state.lancamentos = await DB.getLancamentos(mesAnoStr(state.currentMonth, state.currentYear));
     const label = `${MONTHS[state.currentMonth]} ${state.currentYear}`;
-    ['home-month-label','lanc-month-label','rel-month-label'].forEach(id=>{const el=document.getElementById(id);if(el)el.textContent=label;});
+    ['home-month-label','lanc-month-label'].forEach(id=>{const el=document.getElementById(id);if(el)el.textContent=label;});
     if (state.currentScreen==='screen-home') renderHome();
     if (state.currentScreen==='screen-lancamentos') renderLancamentos();
     if (state.currentScreen==='screen-relatorios') renderRelatorios();
@@ -1399,141 +1397,17 @@ const App = (() => {
   ══════════════════════════════════════ */
   function setRelTab(tab){
     state.relTab=tab;
-    ['mensal','evolucao','analise','cartoes','parcelamentos'].forEach(t=>document.getElementById('rt-'+t)?.classList.toggle('active',t===tab));
-    const nav=document.getElementById('rel-month-nav');
-    if(nav) nav.style.display=tab==='mensal'?'flex':'none';
+    ['evolucao','analise','cartoes','parcelamentos'].forEach(t=>document.getElementById('rt-'+t)?.classList.toggle('active',t===tab));
     renderRelatorios();
   }
 
   async function renderRelatorios(){
     const el=document.getElementById('rel-content');
     el.innerHTML='<div class="spinner"></div>';
-    if(state.relTab==='mensal') await renderRelMensal(el);
-    else if(state.relTab==='cartoes') await renderLimiteCartoes(el);
+    if(state.relTab==='cartoes') await renderLimiteCartoes(el);
     else if(state.relTab==='parcelamentos') await renderParcelamentos(el);
     else if(state.relTab==='analise') await renderRelAnalise(el);
     else await renderRelEvolucao(el);
-  }
-
-  async function renderRelMensal(el){
-    const lancs=state.lancamentos;
-    const mesLabel=`${MONTHS[state.currentMonth]} ${state.currentYear}`;
-
-    // totais por categoria (saídas pagas)
-    const catTotals={},subCatTotals={};
-    lancs.filter(l=>['debito','credito'].includes(l.tipo)).forEach(l=>{
-      const v=l.tipo==='credito'?(l.valorParcela||0):(l.valor||0);
-      if(!l.categoriaId) return;
-      catTotals[l.categoriaId]=(catTotals[l.categoriaId]||0)+v;
-      subCatTotals[`${l.categoriaId}__${l.subcat||''}`]=(subCatTotals[`${l.categoriaId}__${l.subcat||''}`]||0)+v;
-    });
-    lancs.filter(l=>l.tipo==='fixo'&&l.pago).forEach(l=>{
-      const v=l.valor||0;
-      if(!l.categoriaId) return;
-      catTotals[l.categoriaId]=(catTotals[l.categoriaId]||0)+v;
-      subCatTotals[`${l.categoriaId}__${l.subcat||''}`]=(subCatTotals[`${l.categoriaId}__${l.subcat||''}`]||0)+v;
-    });
-    const totalGastos=Object.values(catTotals).reduce((s,v)=>s+v,0);
-
-    const entConf=lancs.filter(l=>l.tipo==='entrada'&&isDateConfirmed(l.data)).reduce((s,l)=>s+(l.valor||0),0);
-    const entPend=lancs.filter(l=>l.tipo==='entrada'&&!isDateConfirmed(l.data)).reduce((s,l)=>s+(l.valor||0),0);
-    const debito=lancs.filter(l=>l.tipo==='debito'&&isDateConfirmed(l.data)).reduce((s,l)=>s+(l.valor||0),0);
-    const fixosDebPagos=lancs.filter(l=>l.tipo==='fixo'&&l.pago&&l.pagamento==='debito').reduce((s,l)=>s+(l.valor||0),0);
-    const fixosNPagos=lancs.filter(l=>l.tipo==='fixo'&&!l.pago).reduce((s,l)=>s+(l.valor||0),0);
-
-    const creditoPorCartao={};
-    state.cartoes.forEach(c=>creditoPorCartao[c.id]=0);
-    lancs.filter(l=>l.tipo==='credito').forEach(l=>{
-      if(l.cartaoId) creditoPorCartao[l.cartaoId]=(creditoPorCartao[l.cartaoId]||0)+(l.valorParcela||0);
-    });
-    lancs.filter(l=>l.tipo==='fixo'&&l.pago&&l.cartaoId).forEach(l=>{
-      creditoPorCartao[l.cartaoId]=(creditoPorCartao[l.cartaoId]||0)+(l.valor||0);
-    });
-
-    const saldoIni=await getSaldoInicialMes(state.currentMonth,state.currentYear);
-    const saldoFinal=saldoIni+entConf-debito-fixosDebPagos;
-    propagarSaldoParaProximoMes(saldoFinal, state.currentMonth, state.currentYear);
-
-    const catItems=Object.entries(catTotals)
-      .map(([id,val])=>({cat:getCatById(parseInt(id)),val}))
-      .filter(x=>x.cat&&x.val>0).sort((a,b)=>b.val-a.val);
-
-    const subCatItems=Object.entries(subCatTotals).map(([key,val])=>{
-      const [catId,subcatNome]=key.split('__');
-      const cat=getCatById(parseInt(catId));
-      if(!cat||!val) return null;
-      const subObj=subcatNome&&cat.subcats?cat.subcats.find(s=>(typeof s==='object'?s.nome:s)===subcatNome):null;
-      return {cat,subcatNome:subcatNome||null,val,
-        emoji:subObj?.emoji||cat.emoji,cor:subObj?.cor||cat.cor,
-        label:subcatNome?`${cat.nome} › ${subcatNome}`:cat.nome};
-    }).filter(Boolean).sort((a,b)=>b.val-a.val);
-
-    el.innerHTML=`
-      <div class="card" style="padding:20px">
-        <div class="section-label" style="padding:0;margin-bottom:14px">Saídas por categoria</div>
-        ${catItems.length===0?'<div style="text-align:center;color:var(--text3);font-size:13px;padding:16px 0">Nenhuma saída registrada</div>':
-          `<div style="position:relative;width:180px;height:180px;margin:0 auto 20px"><canvas id="pie-canvas-cat" width="180" height="180"></canvas></div>
-           <div style="display:flex;flex-direction:column;gap:8px">
-            ${catItems.map(i=>`<div style="display:flex;align-items:center;gap:8px">
-              <div style="width:8px;height:8px;border-radius:50%;background:${i.cat.cor};flex-shrink:0"></div>
-              <span style="flex:1;font-size:13px;color:var(--text2)">${i.cat.emoji} ${i.cat.nome}</span>
-              <span style="font-size:12px;font-weight:500;font-family:'DM Mono',monospace;color:${i.cat.cor}">${totalGastos>0?((i.val/totalGastos)*100).toFixed(1)+'%':'0%'}</span>
-              <span style="font-size:12px;color:var(--text3);font-family:'DM Mono',monospace">${fmtMoney(i.val)}</span>
-            </div>`).join('')}</div>`}
-      </div>
-      <div class="card" style="padding:20px">
-        <div class="section-label" style="padding:0;margin-bottom:14px">Saídas por subcategoria</div>
-        ${subCatItems.length===0?'<div style="text-align:center;color:var(--text3);font-size:13px;padding:16px 0">Nenhuma saída registrada</div>':
-          `<div style="position:relative;width:180px;height:180px;margin:0 auto 20px"><canvas id="pie-canvas-sub" width="180" height="180"></canvas></div>
-           <div style="display:flex;flex-direction:column;gap:8px">
-            ${subCatItems.map(i=>`<div style="display:flex;align-items:center;gap:8px">
-              <div style="width:8px;height:8px;border-radius:50%;background:${i.cor};flex-shrink:0"></div>
-              <span style="flex:1;font-size:13px;color:var(--text2)">${i.emoji} ${i.label}</span>
-              <span style="font-size:12px;font-weight:500;font-family:'DM Mono',monospace;color:${i.cor}">${totalGastos>0?((i.val/totalGastos)*100).toFixed(1)+'%':'0%'}</span>
-              <span style="font-size:12px;color:var(--text3);font-family:'DM Mono',monospace">${fmtMoney(i.val)}</span>
-            </div>`).join('')}</div>`}
-      </div>
-      <div class="card" style="padding:20px">
-        <div class="section-label" style="padding:0;margin-bottom:14px">Resumo do mês</div>
-        <div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:0.5px solid var(--border)"><span style="font-size:13px;color:var(--text2)">Entradas confirmadas</span><span style="font-size:14px;font-weight:500;font-family:'DM Mono',monospace;color:var(--green)">${fmtMoney(entConf)}</span></div>
-        <div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:0.5px solid var(--border)"><span style="font-size:13px;color:var(--text2)">Entradas pendentes</span><span style="font-size:14px;font-weight:500;font-family:'DM Mono',monospace;color:var(--amber)">${fmtMoney(entPend)}</span></div>
-        <div style="height:0.5px;background:var(--border);margin:4px 0"></div>
-        <div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:0.5px solid var(--border)"><span style="font-size:13px;color:var(--text2)">Saídas débito</span><span style="font-size:14px;font-weight:500;font-family:'DM Mono',monospace;color:var(--red)">-${fmtMoney(debito)}</span></div>
-        <div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:0.5px solid var(--border)"><span style="font-size:13px;color:var(--text2)">Gastos fixos pagos (débito)</span><span style="font-size:14px;font-weight:500;font-family:'DM Mono',monospace;color:var(--red)">-${fmtMoney(fixosDebPagos)}</span></div>
-        <div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:0.5px solid var(--border)"><span style="font-size:13px;color:var(--text3)">Gastos fixos previstos (não pagos)</span><span style="font-size:14px;font-weight:500;font-family:'DM Mono',monospace;color:var(--text3)">${fmtMoney(fixosNPagos)}</span></div>
-        <div style="height:0.5px;background:var(--border);margin:4px 0"></div>
-        ${state.cartoes.map(c=>`<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:0.5px solid var(--border)">
-          <span style="font-size:13px;color:var(--text2)">Crédito ${c.nome}</span>
-          <span style="font-size:14px;font-weight:500;font-family:'DM Mono',monospace;color:${c.cor}">${fmtMoney(creditoPorCartao[c.id]||0)}</span>
-        </div>`).join('')}
-        <div style="height:0.5px;background:var(--border);margin:4px 0"></div>
-        <div style="display:flex;justify-content:space-between;padding:7px 0">
-          <span style="font-size:14px;font-weight:600;color:var(--text)">Saldo final</span>
-          <span style="font-size:15px;font-weight:600;font-family:'DM Mono',monospace;color:var(--text)">${fmtMoney(saldoFinal)}</span>
-        </div>
-      </div>
-      <div style="height:8px"></div>`;
-
-    setTimeout(()=>{
-      drawPie('pie-canvas-cat',catItems.map(i=>({val:i.val,cor:i.cat.cor})),totalGastos);
-      drawPie('pie-canvas-sub',subCatItems.map(i=>({val:i.val,cor:i.cor})),totalGastos);
-    },100);
-  }
-
-  function drawPie(canvasId,items,total){
-    const canvas=document.getElementById(canvasId);
-    if(!canvas||!items.length) return;
-    const ctx=canvas.getContext('2d');
-    const cx=90,cy=90,r=80,inner=52;
-    let start=-Math.PI/2;
-    items.forEach(item=>{
-      const slice=(item.val/total)*2*Math.PI;
-      ctx.beginPath();ctx.moveTo(cx,cy);ctx.arc(cx,cy,r,start,start+slice);ctx.closePath();
-      ctx.fillStyle=item.cor;ctx.fill();start+=slice;
-    });
-    ctx.beginPath();ctx.arc(cx,cy,inner,0,2*Math.PI);ctx.fillStyle='#17171c';ctx.fill();
-    ctx.fillStyle='#f0f0f0';ctx.font='500 11px DM Mono,monospace';ctx.textAlign='center';ctx.textBaseline='middle';
-    ctx.fillText(fmtMoney(total),cx,cy);
   }
 
   async function renderRelEvolucao(el){
