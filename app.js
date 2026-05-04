@@ -1740,7 +1740,9 @@ const App = (() => {
       if (f.tipos.length > 0 && !f.tipos.includes(l.tipo)) return false;
 
       // Forma de pagamento
-      if (f.pagamentos.length > 0) {
+      // Entradas não têm forma de pagamento (são receitas), então o filtro
+      // de Pagamento não se aplica a elas — passam livremente.
+      if (f.pagamentos.length > 0 && l.tipo !== 'entrada') {
         let key = null;
         if (l.tipo === 'debito') key = 'debito';
         else if (l.tipo === 'credito' && l.cartaoId) key = 'credito_' + l.cartaoId;
