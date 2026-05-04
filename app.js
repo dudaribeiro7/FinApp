@@ -603,15 +603,17 @@ const App = (() => {
       nome = l.tipo;
     }
 
-    // ── Detalhe: categoria ou "cat › subcat" ──
+    // ── Detalhe: cat/subcat sem duplicar o que já é o nome principal ──
     let detalhe = '';
-    if (l.subcat && cat) {
-      const subObj = cat.subcats ? cat.subcats.find(s=>(typeof s==='string'?s:s.nome)===l.subcat) : null;
-      const subEmoji = (subObj && typeof subObj==='object') ? subObj.emoji : '';
-      detalhe = `${subEmoji ? subEmoji+' ' : ''}${cat.nome} › ${l.subcat}`;
-    } else if (cat) {
+    if (l.descricao) {
+      // nome = descrição → detalhe pode ter cat (e subcat se houver)
+      if (l.subcat && cat) detalhe = `${cat.nome} › ${l.subcat}`;
+      else if (cat) detalhe = cat.nome;
+    } else if (l.subcat && cat) {
+      // nome = subcat → detalhe mostra só a categoria pai
       detalhe = cat.nome;
     }
+    // (se nome = cat, não repete a cat no detalhe — deixa só o resto)
     if (isFixo) {
       detalhe += ` · ${l.pagamento==='debito'?'Gasto fixo · Débito': `Gasto fixo · ${cartao?.nome||'Crédito'}`}`;
       if (l.dataPagamento) {
@@ -629,6 +631,8 @@ const App = (() => {
       detalhe += ' · Entrada fixa';
     }
     if (dataTxt) detalhe += ` · ${dataTxt}`;
+    // Remove " · " inicial caso detalhe tenha começado vazio
+    detalhe = detalhe.replace(/^ · /, '');
 
     // Badge de status
     const badge = semData ? '<span class="badge badge-nodate">sem data</span>' :
@@ -640,8 +644,8 @@ const App = (() => {
         ${l.pago?'<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>':'<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/></svg>'}
       </div>` : '';
 
-    // Ícone: sempre emoji da CATEGORIA (não subcategoria)
-    const catEmoji = cat ? cat.emoji : (isEntrada ? '💰' : '💸');
+    // Ícone: prioridade subcat → cat (usa o helper getCatEmoji)
+    const catEmoji = cat ? getCatEmoji(l) : (isEntrada ? '💰' : '💸');
     return `<div class="feed-item" onclick="App.editLancamento(${l.id})">
       ${pagoToggle}
       <div class="feed-icon" style="background:${bgCor}">
@@ -1934,13 +1938,27 @@ const App = (() => {
           }).map(it => {
             const l = it.l;
             const cat = getCatById(l.categoriaId);
-            const cor = cat?.cor || 'var(--text3)';
-            const emoji = cat?.emoji || '•';
+            const cor = getCatCor(l);
+            const emoji = getCatEmoji(l);
             const isEntrada = l.tipo === 'entrada';
             const valColor = isEntrada ? 'var(--green)' : 'var(--red)';
             const sinal = isEntrada ? '' : '-';
-            const desc = l.descricao || cat?.nome || '—';
-            const subInfo = l.subcat ? ` · ${l.subcat}` : '';
+            // Nome em destaque: descrição > subcategoria > categoria
+            let desc;
+            if (l.descricao) desc = l.descricao;
+            else if (l.subcat) desc = l.subcat;
+            else if (cat) desc = cat.nome;
+            else desc = '—';
+            // Detalhe da cat/subcat: evita duplicar o que já está no nome
+            let catInfo = '';
+            if (l.descricao) {
+              // nome = descrição → mostra cat (e subcat se houver)
+              if (cat) catInfo = ` · ${cat.nome}${l.subcat ? ' › ' + l.subcat : ''}`;
+            } else if (l.subcat && cat) {
+              // nome = subcat → mostra só a cat pai
+              catInfo = ` · ${cat.nome}`;
+            }
+            // (se nome = cat ou nada, catInfo fica vazio: não tem o que adicionar)
             let parcInfo = '';
             if (l.tipo==='credito' && l.totalParcelas>1) {
               parcInfo = it.ehCompraCheia ? ` · ${it.totalParcelas||l.totalParcelas}x` : ` · ${l.parcela}/${l.totalParcelas}`;
@@ -1956,7 +1974,7 @@ const App = (() => {
                 <div style="font-size:13px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:6px">
                   <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${desc}</span>${statusBadge}
                 </div>
-                <div style="font-size:10px;color:var(--text3);margin-top:2px">${_fmtDataBR(it.data)} · ${tipoTag}${subInfo}${parcInfo}${cartaoInfo}</div>
+                <div style="font-size:10px;color:var(--text3);margin-top:2px">${_fmtDataBR(it.data)} · ${tipoTag}${catInfo}${parcInfo}${cartaoInfo}</div>
               </div>
               <div style="font-size:13px;font-weight:500;font-family:'DM Mono',monospace;color:${valColor};flex-shrink:0">${sinal}${fmtMoney(it.valor)}</div>
             </div>`;
