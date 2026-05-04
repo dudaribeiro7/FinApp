@@ -235,16 +235,16 @@ const DB = (() => {
 
   async function exportAll() {
     await open();
-    const [lancamentos,categorias,cartoes,config,fixos_template] = await Promise.all([
-      all('lancamentos'),all('categorias'),all('cartoes'),all('config'),all('fixos_template')
+    const [lancamentos,categorias,cartoes,config,fixos_template,fixos_deletados] = await Promise.all([
+      all('lancamentos'),all('categorias'),all('cartoes'),all('config'),all('fixos_template'),all('fixos_deletados')
     ]);
-    return JSON.stringify({lancamentos,categorias,cartoes,config,fixos_template,exportedAt:new Date().toISOString()},null,2);
+    return JSON.stringify({lancamentos,categorias,cartoes,config,fixos_template,fixos_deletados,exportedAt:new Date().toISOString()},null,2);
   }
 
   async function importAll(json) {
     await open();
     const data = JSON.parse(json);
-    for (const store of ['lancamentos','categorias','cartoes','config','fixos_template']) {
+    for (const store of ['lancamentos','categorias','cartoes','config','fixos_template','fixos_deletados']) {
       if (!data[store]) continue;
       await new Promise((res,rej) => { const r=tx(store,'readwrite').clear(); r.onsuccess=res; r.onerror=rej; });
       for (const item of data[store]) await put(store, item);
@@ -253,7 +253,7 @@ const DB = (() => {
 
   async function clearAll() {
     await open();
-    for (const store of ['lancamentos','categorias','cartoes','config','fixos_template']) {
+    for (const store of ['lancamentos','categorias','cartoes','config','fixos_template','fixos_deletados']) {
       await new Promise((res,rej) => { const r=tx(store,'readwrite').clear(); r.onsuccess=res; r.onerror=rej; });
     }
   }

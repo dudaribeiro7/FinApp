@@ -2693,8 +2693,11 @@ const App = (() => {
     reader.onload=async e=>{
       try{
         await DB.importAll(e.target.result);
+        const ma=mesAnoStr(state.currentMonth,state.currentYear);
+        const maHoje=mesAnoStr(new Date().getMonth(),new Date().getFullYear());
+        await DB.ensureFixosMes(ma,maHoje);
         state.categorias=await DB.getCategorias();state.cartoes=await DB.getCartoes();
-        state.lancamentos=await DB.getLancamentos(mesAnoStr(state.currentMonth,state.currentYear));
+        state.lancamentos=await DB.getLancamentos(ma);
         toast('Backup importado!','ok');renderPerfil();
       }catch(err){toast('Arquivo inválido','err');}
     };
