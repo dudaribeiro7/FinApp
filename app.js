@@ -1543,6 +1543,14 @@ const App = (() => {
   ══════════════════════════════════════ */
   function _initAnaliseFiltros() {
     if (state.analiseFiltros) return;
+    // Tenta restaurar filtros salvos
+    try {
+      const saved = localStorage.getItem('analise_filtros');
+      if (saved) {
+        state.analiseFiltros = JSON.parse(saved);
+        return;
+      }
+    } catch(e) {}
     // Padrão: mês atual
     const y = state.currentYear, m = state.currentMonth;
     const ini = `${y}-${String(m+1).padStart(2,'0')}-01`;
@@ -1556,6 +1564,12 @@ const App = (() => {
       catFilter: [],    // mesmo formato de lancCatFilter: [{type:'cat',id,label} | {type:'subcat',catId,nome,label}]
       mostrarParcelas: true, // true = parcelas separadas; false = compras cheias
     };
+  }
+
+  function _saveAnaliseFiltros() {
+    try {
+      localStorage.setItem('analise_filtros', JSON.stringify(state.analiseFiltros));
+    } catch(e) {}
   }
 
   // Calcula a data de referência da parcela: dataCompra + (parcela-1) meses
@@ -1991,6 +2005,7 @@ const App = (() => {
     _initAnaliseFiltros();
     if (qual === 'ini') state.analiseFiltros.dataInicio = valor || null;
     else state.analiseFiltros.dataFim = valor || null;
+    _saveAnaliseFiltros();
     renderRelatorios();
   }
 
@@ -2018,6 +2033,7 @@ const App = (() => {
       f.dataInicio = null;
       f.dataFim = null;
     }
+    _saveAnaliseFiltros();
     renderRelatorios();
   }
 
@@ -2026,6 +2042,7 @@ const App = (() => {
     state.analiseFiltros.tipos = [];
     state.analiseFiltros.pagamentos = [];
     state.analiseFiltros.catFilter = [];
+    _saveAnaliseFiltros();
     renderRelatorios();
   }
 
@@ -2036,19 +2053,23 @@ const App = (() => {
 
   function _analiseToggleParcelas() {
     state.analiseFiltros.mostrarParcelas = !state.analiseFiltros.mostrarParcelas;
+    _saveAnaliseFiltros();
     renderRelatorios();
   }
 
   function _analiseRemoveTipo(t) {
     state.analiseFiltros.tipos = state.analiseFiltros.tipos.filter(x => x !== t);
+    _saveAnaliseFiltros();
     renderRelatorios();
   }
   function _analiseRemovePag(p) {
     state.analiseFiltros.pagamentos = state.analiseFiltros.pagamentos.filter(x => x !== p);
+    _saveAnaliseFiltros();
     renderRelatorios();
   }
   function _analiseRemoveCat(idx) {
     state.analiseFiltros.catFilter.splice(idx, 1);
+    _saveAnaliseFiltros();
     renderRelatorios();
   }
 
@@ -2079,6 +2100,7 @@ const App = (() => {
     const arr = state.analiseFiltros.tipos;
     const i = arr.indexOf(k);
     if (i >= 0) arr.splice(i,1); else arr.push(k);
+    _saveAnaliseFiltros();
     renderRelatorios();
     _analiseAbrirTipo();
   }
@@ -2105,6 +2127,7 @@ const App = (() => {
     const arr = state.analiseFiltros.pagamentos;
     const i = arr.indexOf(k);
     if (i >= 0) arr.splice(i,1); else arr.push(k);
+    _saveAnaliseFiltros();
     renderRelatorios();
     _analiseAbrirPagamento();
   }
@@ -2148,6 +2171,7 @@ const App = (() => {
       const i = arr.findIndex(f => f.type==='subcat' && f.catId===catId && f.nome===subcatNome);
       if (i >= 0) arr.splice(i,1); else arr.push({type:'subcat', catId, nome:subcatNome, label});
     }
+    _saveAnaliseFiltros();
     renderRelatorios();
     _analiseAbrirCategoria();
   }
