@@ -246,7 +246,7 @@ const App = (() => {
   function getVavrIconHtml(marca, size=28) {
     const url = getVavrIconUrl(marca);
     if (url) return `<img src="${url}" width="${size}" height="${size}" style="border-radius:${size/4}px;object-fit:cover;flex-shrink:0" onerror="this.style.display='none'">`;
-    return `<div style="width:${size}px;height:${size}px;border-radius:${size/4}px;background:#f59e0b22;display:flex;align-items:center;justify-content:center;font-size:${size*0.55}px;flex-shrink:0">🍽️</div>`;
+    return `<div style="width:${size}px;height:${size}px;border-radius:${size/4}px;background:var(--accent-dim);display:flex;align-items:center;justify-content:center;font-size:${size*0.55}px;flex-shrink:0">🍽️</div>`;
   }
   function getVavrById(id) { return state.vavrs.find(v=>v.id===id); }
   function getBancoIconUrl(nome) {
@@ -588,13 +588,13 @@ const App = (() => {
                                       .reduce((s,l) => s + (l.valor||0), 0);
         const iconHtml = getVavrIconHtml(v.marca, 32);
         return `<div class="cartao-chip" style="cursor:pointer;padding:12px 14px" onclick="App._abrirVavrNaAba(${v.id})">
-          <div class="cartao-band" style="background:#f59e0b"></div>
+          <div class="cartao-band" style="background:var(--accent2)"></div>
           <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0">
             ${iconHtml}
             <div class="cartao-chip-info" style="flex:1;min-width:0">
               <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
                 <div class="cartao-chip-nome">${v.nome||v.marca}</div>
-                <div style="font-size:10px;color:#f59e0b;background:#f59e0b22;padding:1px 7px;border-radius:6px;font-weight:600">VA/VR</div>
+                <div style="font-size:10px;color:var(--accent2);background:var(--accent-dim);padding:1px 7px;border-radius:6px;font-weight:600">VA/VR</div>
               </div>
               <div style="font-size:10.5px;color:var(--text3);margin-top:3px">
                 Recarga <span style="color:var(--text2)">dia ${v.diaRecarga} · ${fmtMoney(v.valorRecarga)}</span>
@@ -605,7 +605,7 @@ const App = (() => {
             </div>
           </div>
           <div class="cartao-chip-vals">
-            <div class="cartao-chip-usado" style="color:#f59e0b">${fmtMoney(saldo)}</div>
+            <div class="cartao-chip-usado" style="color:var(--accent2)">${fmtMoney(saldo)}</div>
             <div class="cartao-chip-limite" style="font-size:10px;color:var(--text3)">saldo</div>
           </div>
         </div>`;
@@ -672,7 +672,7 @@ const App = (() => {
       const catNome = l.subcat ? `${cat?.nome||'Alimentação'} › ${l.subcat}` : (cat?.nome || 'Alimentação');
       const dataTxt = l.data ? new Date(l.data+'T12:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}) : '';
       return `<div class="feed-item" onclick="App.editLancamento(${l.id})">
-        <div class="feed-icon" style="background:#f59e0b22;overflow:hidden;padding:0">
+        <div class="feed-icon" style="background:var(--accent-dim);overflow:hidden;padding:0">
           ${iconHtml}
         </div>
         <div class="feed-info">
@@ -680,7 +680,7 @@ const App = (() => {
           <div class="feed-cat">${catNome} · VA/VR${vavr?' · '+(vavr.nome||vavr.marca):''}${dataTxt?' · '+dataTxt:''}</div>
         </div>
         <div class="feed-right">
-          <div class="feed-val" style="color:#f59e0b">-${fmtMoney(l.valor||0)}</div>
+          <div class="feed-val" style="color:var(--accent2)">-${fmtMoney(l.valor||0)}</div>
         </div>
       </div>`;
     }
@@ -899,8 +899,8 @@ const App = (() => {
       subTabsHtml = `<div style="display:grid;grid-template-columns:repeat(${gridCols},1fr);gap:6px;padding:0 20px 12px;flex-shrink:0">
         ${subTabs.map(t=>{
           const isActive=activeKey===t.key;
-          const bg=isActive?'#f59e0b':'var(--bg3)';
-          const bc=isActive?'#f59e0b':'var(--border2)';
+          const bg=isActive?'var(--accent2)':'var(--bg3)';
+          const bc=isActive?'var(--accent2)':'var(--border2)';
           const tx=isActive?'#fff':'var(--text2)';
           return `<div data-subtab="${t.key}" style="display:flex;align-items:center;justify-content:center;gap:5px;padding:7px 6px;border-radius:12px;border:0.5px solid ${bc};background:${bg};cursor:pointer;transition:all 0.15s"><span style="font-size:12px;font-weight:500;color:${tx}">${t.label}</span></div>`;
         }).join('')}
@@ -964,7 +964,7 @@ const App = (() => {
         const totalVavr = lancs.reduce((s,l)=>s+(l.valor||0),0);
         totaisHtml = `<div style="margin:0 20px 12px;padding:12px 16px;background:var(--bg3);border-radius:14px;display:flex;align-items:center;justify-content:space-between">
           <span style="font-size:12px;color:var(--text3)">${lancs.length} gasto${lancs.length!==1?'s':''} no mês</span>
-          <span style="font-size:15px;font-weight:700;color:#f59e0b">-${fmtMoney(totalVavr)}</span>
+          <span style="font-size:15px;font-weight:700;color:var(--accent2)">-${fmtMoney(totalVavr)}</span>
         </div>`;
       } else {
         // Todos
@@ -1187,7 +1187,7 @@ const App = (() => {
         <div class="field"><div class="field-label">Data</div>
           <input type="date" id="f-data" value="${edit?.data||today}"></div>
         ${campoDesc}
-        <button class="submit-btn" style="background:#f59e0b;color:#fff" onclick="App._salvar()">${state.editingId?'Salvar alterações':'Salvar gasto VA/VR'}</button>
+        <button class="submit-btn" style="background:var(--accent2);color:#fff" onclick="App._salvar()">${state.editingId?'Salvar alterações':'Salvar gasto VA/VR'}</button>
         ${btnExcluir}<div style="height:20px"></div>`;
       setTimeout(()=>{
         if(catVavrSel) _selCat(catVavrSel,true);
@@ -2493,7 +2493,7 @@ const App = (() => {
     } else if (periodoFechado) {
       statusLabel = '🔒 Fechada'; statusBg = '#3b82f620'; statusColor = '#3b82f6';
     } else {
-      statusLabel = '⏳ Aberta'; statusBg = '#f59e0b20'; statusColor = '#f59e0b';
+      statusLabel = '⏳ Aberta'; statusBg = 'var(--accent2)20'; statusColor = 'var(--accent2)';
     }
 
     // ── 2. Histórico (gráfico) ──
@@ -2789,7 +2789,7 @@ const App = (() => {
   }
 
   function _toggleCatRow(id){document.getElementById('cat-row-'+id)?.classList.toggle('open');}
-  const COLORS=['#f87171','#fb923c','#fbbf24','#4ade80','#34d399','#60a5fa','#818cf8','#a78bfa','#f472b6','#94a3b8','#7c6af7','#0ea5e9','#10b981','#f59e0b','#ef4444'];
+  const COLORS=['#f87171','#fb923c','#fbbf24','#4ade80','#34d399','#60a5fa','#818cf8','#a78bfa','#f472b6','#94a3b8','#7c6af7','#0ea5e9','#10b981','var(--accent2)','#ef4444'];
 
   function _emojiFieldHtml(val=''){
     return `<div class="field"><div class="field-label">Ícone (emoji)</div>

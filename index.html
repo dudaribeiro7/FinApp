@@ -458,7 +458,7 @@ select option{background:var(--bg3)}
 .type-tab.active-debito{background:var(--accent);border-color:var(--accent);color:#fff}
 .type-tab.active-credito{background:var(--accent);border-color:var(--accent);color:#fff}
 .type-tab.active-entrada_fixa{background:var(--accent);border-color:var(--accent);color:#fff}
-.type-tab.active-vavr{background:#f59e0b;border-color:#f59e0b;color:#fff}
+.type-tab.active-vavr{background:var(--accent2);border-color:var(--accent2);color:#fff}
 
 /* seg control */
 .seg-ctrl{
@@ -862,7 +862,7 @@ select option{background:var(--bg3)}
     <div id="h-vavr" style="display:none">
       <div class="section-label" style="display:flex;justify-content:space-between;align-items:center;padding-right:20px;margin-top:4px">
         <span>VA/VR</span>
-        <span style="font-size:11px;color:#f59e0b;cursor:pointer" onclick="App.setLancTab('vavr');App.gotoScreen('screen-lancamentos')">Ver lançamentos</span>
+        <span style="font-size:11px;color:var(--accent2);cursor:pointer" onclick="App.setLancTab('vavr');App.gotoScreen('screen-lancamentos')">Ver lançamentos</span>
       </div>
       <div class="cartao-chips" id="h-vavr-cards"></div>
     </div>
