@@ -239,27 +239,27 @@ const App = (() => {
     if (!marca) return null;
     const key = marca.toLowerCase().trim();
     for (const [k, domain] of Object.entries(VAVR_DOMINIOS)) {
-      if (key.includes(k)) return `https://www.google.com/s2/favicons?domain=${domain}&sz=64`;
+      if (key.includes(k)) return `https://www.google.com/s2/favicons?domain=${domain}&sz=128`;
     }
     return null;
   }
   function getVavrIconHtml(marca, size=28) {
     const url = getVavrIconUrl(marca);
-    if (url) return `<img src="${url}" width="${size}" height="${size}" style="border-radius:${size/4}px;object-fit:cover;flex-shrink:0" onerror="this.style.display='none'">`;
+    if (url) return `<img src="${url}" width="${size}" height="${size}" style="border-radius:${size/4}px;object-fit:contain;background:#fff;padding:2px;flex-shrink:0" onerror="this.style.display='none'">`;
     return `<div style="width:${size}px;height:${size}px;border-radius:${size/4}px;background:var(--accent-dim);display:flex;align-items:center;justify-content:center;font-size:${size*0.55}px;flex-shrink:0">🍽️</div>`;
   }
   function getVavrById(id) { return state.vavrs.find(v=>v.id===id); }
   function getBancoIconUrl(nome) {
     const key = nome.toLowerCase().trim();
     for (const [k, domain] of Object.entries(BANCO_DOMINIOS)) {
-      if (key.includes(k)) return `https://www.google.com/s2/favicons?domain=${domain}&sz=64`;
+      if (key.includes(k)) return `https://www.google.com/s2/favicons?domain=${domain}&sz=128`;
     }
     return null;
   }
   function getBancoIconHtml(nome, size=28) {
     const url = getBancoIconUrl(nome);
     if (!url) return '';
-    return `<img src="${url}" width="${size}" height="${size}" style="border-radius:${size/4}px;object-fit:cover;flex-shrink:0" onerror="this.style.display='none'">`;
+    return `<img src="${url}" width="${size}" height="${size}" style="border-radius:${size/4}px;object-fit:contain;background:#fff;padding:2px;flex-shrink:0" onerror="this.style.display='none'">`;
   }
   function getCartaoById(id) { return state.cartoes.find(c=>c.id===id); }
 
