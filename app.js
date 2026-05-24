@@ -622,6 +622,8 @@ const App = (() => {
     state.lancSubTab = 'vavr_' + vavrId;
     gotoScreen('screen-lancamentos');
   }
+
+  function abrirCartao(cartaoId) {
     state.cartaoFiltro = cartaoId;
     state.lancTab = 'saidas';
     state.lancSubTab = 'credito_'+cartaoId;
