@@ -2,7 +2,7 @@
    db.js — IndexedDB layer v3
 ═══════════════════════════════════════════ */
 const DB = (() => {
-  const NAME = 'financas_app', VERSION = 4;
+  const NAME = 'financas_app', VERSION = 5;
   let _db = null;
 
   async function open() {
@@ -29,6 +29,7 @@ const DB = (() => {
           const fd = db.createObjectStore('fixos_deletados', { keyPath: 'id', autoIncrement: true });
           fd.createIndex('templateMes', ['templateId','mesAno'], { unique: true });
         }
+        if (!db.objectStoreNames.contains('vavr')) db.createObjectStore('vavr', { keyPath: 'id', autoIncrement: true });
       };
       req.onsuccess = e => { _db = e.target.result; res(_db); };
       req.onerror = e => rej(e.target.error);
@@ -184,6 +185,10 @@ const DB = (() => {
   async function saveCartao(obj) { await open(); return put('cartoes', obj); }
   async function deleteCartao(id) { await open(); return del('cartoes', id); }
 
+  async function getVavrs() { await open(); return all('vavr'); }
+  async function saveVavr(obj) { await open(); return put('vavr', obj); }
+  async function deleteVavr(id) { await open(); return del('vavr', id); }
+
   async function seedDefaults() {
     await open();
     const cats = await all('categorias');
@@ -235,16 +240,16 @@ const DB = (() => {
 
   async function exportAll() {
     await open();
-    const [lancamentos,categorias,cartoes,config,fixos_template,fixos_deletados] = await Promise.all([
-      all('lancamentos'),all('categorias'),all('cartoes'),all('config'),all('fixos_template'),all('fixos_deletados')
+    const [lancamentos,categorias,cartoes,config,fixos_template,fixos_deletados,vavr] = await Promise.all([
+      all('lancamentos'),all('categorias'),all('cartoes'),all('config'),all('fixos_template'),all('fixos_deletados'),all('vavr')
     ]);
-    return JSON.stringify({lancamentos,categorias,cartoes,config,fixos_template,fixos_deletados,exportedAt:new Date().toISOString()},null,2);
+    return JSON.stringify({lancamentos,categorias,cartoes,config,fixos_template,fixos_deletados,vavr,exportedAt:new Date().toISOString()},null,2);
   }
 
   async function importAll(json) {
     await open();
     const data = JSON.parse(json);
-    for (const store of ['lancamentos','categorias','cartoes','config','fixos_template','fixos_deletados']) {
+    for (const store of ['lancamentos','categorias','cartoes','config','fixos_template','fixos_deletados','vavr']) {
       if (!data[store]) continue;
       await new Promise((res,rej) => { const r=tx(store,'readwrite').clear(); r.onsuccess=res; r.onerror=rej; });
       for (const item of data[store]) await put(store, item);
@@ -253,7 +258,7 @@ const DB = (() => {
 
   async function clearAll() {
     await open();
-    for (const store of ['lancamentos','categorias','cartoes','config','fixos_template','fixos_deletados']) {
+    for (const store of ['lancamentos','categorias','cartoes','config','fixos_template','fixos_deletados','vavr']) {
       await new Promise((res,rej) => { const r=tx(store,'readwrite').clear(); r.onsuccess=res; r.onerror=rej; });
     }
   }
@@ -266,6 +271,7 @@ const DB = (() => {
     markFixoDeletado, getFixosDeletados, clearFixosDeletadosByTemplate,
     getCategorias, saveCategoria, deleteCategoria,
     getCartoes, saveCartao, deleteCartao,
+    getVavrs, saveVavr, deleteVavr,
     getConfig, setConfig,
     exportAll, importAll, clearAll,
   };

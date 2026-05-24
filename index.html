@@ -458,6 +458,7 @@ select option{background:var(--bg3)}
 .type-tab.active-debito{background:var(--accent);border-color:var(--accent);color:#fff}
 .type-tab.active-credito{background:var(--accent);border-color:var(--accent);color:#fff}
 .type-tab.active-entrada_fixa{background:var(--accent);border-color:var(--accent);color:#fff}
+.type-tab.active-vavr{background:#f59e0b;border-color:#f59e0b;color:#fff}
 
 /* seg control */
 .seg-ctrl{
@@ -858,6 +859,14 @@ select option{background:var(--bg3)}
     </div>
     <div class="cartao-chips" id="h-cartoes"></div>
 
+    <div id="h-vavr" style="display:none">
+      <div class="section-label" style="display:flex;justify-content:space-between;align-items:center;padding-right:20px;margin-top:4px">
+        <span>VA/VR</span>
+        <span style="font-size:11px;color:#f59e0b;cursor:pointer" onclick="App.setLancTab('vavr');App.gotoScreen('screen-lancamentos')">Ver lançamentos</span>
+      </div>
+      <div class="cartao-chips" id="h-vavr-cards"></div>
+    </div>
+
     <div style="height:8px"></div>
   </div>
 </div>
@@ -883,6 +892,7 @@ select option{background:var(--bg3)}
       <button class="seg-btn" onclick="App.setLancTab('entradas')" id="lt-entradas">Entradas</button>
       <button class="seg-btn" onclick="App.setLancTab('saidas')" id="lt-saidas">Saídas</button>
       <button class="seg-btn" onclick="App.setLancTab('fixos')" id="lt-fixos">Fixos</button>
+      <button class="seg-btn" onclick="App.setLancTab('vavr')" id="lt-vavr">VA/VR</button>
     </div>
   </div>
 
@@ -912,6 +922,7 @@ select option{background:var(--bg3)}
     <div class="type-tab" data-type="fixo" onclick="App.setTipoLanc('fixo')">Gasto fixo</div>
     <div class="type-tab" data-type="debito" onclick="App.setTipoLanc('debito')">Débito</div>
     <div class="type-tab" data-type="credito" onclick="App.setTipoLanc('credito')">Crédito</div>
+    <div class="type-tab" data-type="vavr" onclick="App.setTipoLanc('vavr')">VA/VR</div>
   </div>
 
   <div class="scroll-area">
@@ -963,6 +974,7 @@ select option{background:var(--bg3)}
   <div class="seg-ctrl" style="flex-shrink:0">
     <button class="seg-btn active" onclick="App.setCfgTab('categorias')" id="ct-categorias">Categorias</button>
     <button class="seg-btn" onclick="App.setCfgTab('cartoes')" id="ct-cartoes">Cartões</button>
+    <button class="seg-btn" onclick="App.setCfgTab('vavr')" id="ct-vavr">VA/VR</button>
     <button class="seg-btn" onclick="App.setCfgTab('aparencia')" id="ct-aparencia">Aparência</button>
     <button class="seg-btn" onclick="App.setCfgTab('dados')" id="ct-dados">Dados</button>
   </div>

@@ -27,6 +27,7 @@ const App = (() => {
     lancamentos: [],
     categorias: [],
     cartoes: [],
+    vavrs: [],
   };
 
   const MONTHS = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
@@ -219,6 +220,35 @@ const App = (() => {
     'sicoob':'sicoob.com.br','sicredi':'sicredi.com.br','neon':'neon.com.br',
     'will bank':'willbank.com.br','will':'willbank.com.br',
   };
+
+  const VAVR_DOMINIOS = {
+    'alelo':'alelo.com.br',
+    'ticket':'ticket.com.br',
+    'sodexo':'sodexo.com.br',
+    'va/vr':'vr.com.br','va vr':'vr.com.br','vavr':'vr.com.br','vr':'vr.com.br',
+    'swile':'swile.co',
+    'caju':'caju.com.br',
+    'flash':'flashapp.com.br',
+    'ifood benefícios':'ifoodbeneficios.com.br','ifood beneficios':'ifoodbeneficios.com.br',
+    'ben':'ben.com.br','ben visa vale':'ben.com.br',
+    'pluxee':'pluxee.com.br','pluxe':'pluxee.com.br',
+    'up brasil':'upbrasil.com.br','up':'upbrasil.com.br',
+  };
+
+  function getVavrIconUrl(marca) {
+    if (!marca) return null;
+    const key = marca.toLowerCase().trim();
+    for (const [k, domain] of Object.entries(VAVR_DOMINIOS)) {
+      if (key.includes(k)) return `https://www.google.com/s2/favicons?domain=${domain}&sz=64`;
+    }
+    return null;
+  }
+  function getVavrIconHtml(marca, size=28) {
+    const url = getVavrIconUrl(marca);
+    if (url) return `<img src="${url}" width="${size}" height="${size}" style="border-radius:${size/4}px;object-fit:cover;flex-shrink:0" onerror="this.style.display='none'">`;
+    return `<div style="width:${size}px;height:${size}px;border-radius:${size/4}px;background:#f59e0b22;display:flex;align-items:center;justify-content:center;font-size:${size*0.55}px;flex-shrink:0">🍽️</div>`;
+  }
+  function getVavrById(id) { return state.vavrs.find(v=>v.id===id); }
   function getBancoIconUrl(nome) {
     const key = nome.toLowerCase().trim();
     for (const [k, domain] of Object.entries(BANCO_DOMINIOS)) {
@@ -232,6 +262,51 @@ const App = (() => {
     return `<img src="${url}" width="${size}" height="${size}" style="border-radius:${size/4}px;object-fit:cover;flex-shrink:0" onerror="this.style.display='none'">`;
   }
   function getCartaoById(id) { return state.cartoes.find(c=>c.id===id); }
+
+  // Calcula o saldo acumulado do VA/VR até hoje
+  // Saldo = saldoInicial + recargas ocorridas até hoje - gastos efetuados até hoje
+  async function calcSaldoVavr(vavr) {
+    const allLancs = await DB.getAllLancamentos();
+    const hoje = todayStr();
+    const mesHoje = mesAnoStr(new Date().getMonth(), new Date().getFullYear());
+    const dataCadastro = vavr.dataCadastro || '2020-01-01';
+    const mesCadastro = dataCadastro.slice(0,7).replace('-','').length > 0
+      ? `${dataCadastro.slice(5,7)}-${dataCadastro.slice(0,4)}`
+      : mesHoje;
+
+    // Contar recargas: a partir do mês SEGUINTE ao cadastro, dia diaRecarga <= hoje
+    let recargas = 0;
+    // Primeiro mês com recarga = mês seguinte ao de cadastro
+    const [dcAno, dcMes] = dataCadastro.split('-').map(Number);
+    let rAno = dcAno, rMes = dcMes + 1;
+    if (rMes > 12) { rMes = 1; rAno++; }
+    const dataHojeObj = new Date(hoje + 'T12:00:00');
+    // Iterar meses de recarga até hoje
+    while (true) {
+      const diaR = String(vavr.diaRecarga).padStart(2,'0');
+      const dataR = `${rAno}-${String(rMes).padStart(2,'0')}-${diaR}`;
+      if (dataR > hoje) break;
+      recargas += (vavr.valorRecarga || 0);
+      rMes++;
+      if (rMes > 12) { rMes = 1; rAno++; }
+      // Segurança: não iterar mais de 120 meses (10 anos)
+      if ((rAno - dcAno) * 12 + (rMes - dcMes) > 120) break;
+    }
+
+    // Gastos: todos lancamentos tipo='vavr' deste VA/VR com data <= hoje
+    const gastos = allLancs
+      .filter(l => l.tipo === 'vavr' && l.vavrId === vavr.id && l.data && l.data <= hoje)
+      .reduce((s, l) => s + (l.valor || 0), 0);
+
+    return (vavr.saldoInicial || 0) + recargas - gastos;
+  }
+
+  // Gastos VA/VR no mês selecionado
+  async function calcGastosVavrMes(vavrId, mesAno) {
+    const lancs = await DB.getLancamentos(mesAno);
+    return lancs.filter(l => l.tipo === 'vavr' && l.vavrId === vavrId)
+                .reduce((s,l) => s + (l.valor || 0), 0);
+  }
 
   // Calcula em qual mesAno (tela) uma compra vai aparecer, dado o cartão e a data da compra.
   // Lógica conforme especificação:
@@ -300,7 +375,7 @@ const App = (() => {
 
   /* ── Dados ───────────────────────────── */
   async function loadData() {
-    [state.categorias, state.cartoes] = await Promise.all([DB.getCategorias(), DB.getCartoes()]);
+    [state.categorias, state.cartoes, state.vavrs] = await Promise.all([DB.getCategorias(), DB.getCartoes(), DB.getVavrs()]);
     await DB.ensureFixosMes(mesAnoStr(state.currentMonth, state.currentYear), mesAnoStr(new Date().getMonth(), new Date().getFullYear()));
     for (const c of state.cartoes) await atualizarFaturaFixa(c.id);
     state.lancamentos = await DB.getLancamentos(mesAnoStr(state.currentMonth, state.currentYear));
@@ -500,9 +575,53 @@ const App = (() => {
         </div>
       </div>`;
     }).join('');
+
+    // VA/VR card
+    const vavrEl = document.getElementById('h-vavr');
+    const vavrCardsEl = document.getElementById('h-vavr-cards');
+    if (state.vavrs.length > 0) {
+      vavrEl.style.display = '';
+      const mesAtual = mesAnoStr(state.currentMonth, state.currentYear);
+      const vavrCards = await Promise.all(state.vavrs.map(async v => {
+        const saldo = await calcSaldoVavr(v);
+        const gastosMes = allLancsHome.filter(l => l.tipo === 'vavr' && l.vavrId === v.id && l.mesAno === mesAtual)
+                                      .reduce((s,l) => s + (l.valor||0), 0);
+        const iconHtml = getVavrIconHtml(v.marca, 32);
+        return `<div class="cartao-chip" style="cursor:pointer;padding:12px 14px" onclick="App._abrirVavrNaAba(${v.id})">
+          <div class="cartao-band" style="background:#f59e0b"></div>
+          <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0">
+            ${iconHtml}
+            <div class="cartao-chip-info" style="flex:1;min-width:0">
+              <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+                <div class="cartao-chip-nome">${v.nome||v.marca}</div>
+                <div style="font-size:10px;color:#f59e0b;background:#f59e0b22;padding:1px 7px;border-radius:6px;font-weight:600">VA/VR</div>
+              </div>
+              <div style="font-size:10.5px;color:var(--text3);margin-top:3px">
+                Recarga <span style="color:var(--text2)">dia ${v.diaRecarga} · ${fmtMoney(v.valorRecarga)}</span>
+              </div>
+              <div style="font-size:10.5px;color:var(--text3);margin-top:1px">
+                Gasto este mês: <span style="color:#f87171">${fmtMoney(gastosMes)}</span>
+              </div>
+            </div>
+          </div>
+          <div class="cartao-chip-vals">
+            <div class="cartao-chip-usado" style="color:#f59e0b">${fmtMoney(saldo)}</div>
+            <div class="cartao-chip-limite" style="font-size:10px;color:var(--text3)">saldo</div>
+          </div>
+        </div>`;
+      }));
+      vavrCardsEl.innerHTML = vavrCards.join('');
+    } else {
+      vavrEl.style.display = 'none';
+      vavrCardsEl.innerHTML = '';
+    }
   }
 
-  function abrirCartao(cartaoId) {
+  function _abrirVavrNaAba(vavrId) {
+    state.lancTab = 'vavr';
+    state.lancSubTab = 'vavr_' + vavrId;
+    gotoScreen('screen-lancamentos');
+  }
     state.cartaoFiltro = cartaoId;
     state.lancTab = 'saidas';
     state.lancSubTab = 'credito_'+cartaoId;
@@ -542,6 +661,26 @@ const App = (() => {
     // Fatura automática: tratamento especial
     if (l.autoFatura && l.faturaCartaoId) {
       return renderFaturaAutoItem(l, showPagoToggle);
+    }
+    // VA/VR: tratamento especial
+    if (l.tipo === 'vavr') {
+      const vavr = getVavrById(l.vavrId);
+      const iconHtml = getVavrIconHtml(vavr?.marca||'', 34);
+      const cat = getCatById(l.categoriaId);
+      const catNome = l.subcat ? `${cat?.nome||'Alimentação'} › ${l.subcat}` : (cat?.nome || 'Alimentação');
+      const dataTxt = l.data ? new Date(l.data+'T12:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}) : '';
+      return `<div class="feed-item" onclick="App.editLancamento(${l.id})">
+        <div class="feed-icon" style="background:#f59e0b22;overflow:hidden;padding:0">
+          ${iconHtml}
+        </div>
+        <div class="feed-info">
+          <div class="feed-nome">${l.descricao||l.subcat||cat?.nome||'Gasto VA/VR'}</div>
+          <div class="feed-cat">${catNome} · VA/VR${vavr?' · '+(vavr.nome||vavr.marca):''}${dataTxt?' · '+dataTxt:''}</div>
+        </div>
+        <div class="feed-right">
+          <div class="feed-val" style="color:#f59e0b">-${fmtMoney(l.valor||0)}</div>
+        </div>
+      </div>`;
     }
     const cat = getCatById(l.categoriaId);
     const isEntrada = l.tipo==='entrada';
@@ -685,7 +824,7 @@ const App = (() => {
     state.lancTab = tab;
     state.lancSubTab = null;
     state.cartaoFiltro = null;
-    ['todos','entradas','saidas','fixos'].forEach(t=>document.getElementById('lt-'+t)?.classList.toggle('active',t===tab));
+    ['todos','entradas','saidas','fixos','vavr'].forEach(t=>document.getElementById('lt-'+t)?.classList.toggle('active',t===tab));
     renderLancamentos();
   }
   function setLancSubTab(sub) { state.lancSubTab=sub; renderLancamentos(); }
@@ -723,6 +862,8 @@ const App = (() => {
     if (state.lancTab==='entradas') lancs=lancs.filter(l=>l.tipo==='entrada');
     else if (state.lancTab==='saidas') lancs=lancs.filter(l=>['debito','credito','fixo'].includes(l.tipo));
     else if (state.lancTab==='fixos') lancs=lancs.filter(l=>l.tipo==='fixo');
+    else if (state.lancTab==='vavr') lancs=lancs.filter(l=>l.tipo==='vavr');
+    else lancs=lancs.filter(l=>l.tipo!=='vavr'); // "todos" não mostra vavr
 
     const feedEl = document.getElementById('lanc-feed');
     let subTabsHtml='', filterHtml='';
@@ -746,6 +887,25 @@ const App = (() => {
       else if (activeKey.startsWith('credito_')) {
         const cid=parseInt(activeKey.replace('credito_',''));
         lancs=lancs.filter(l=>(l.tipo==='credito'&&l.cartaoId===cid)||(l.tipo==='fixo'&&l.cartaoId===cid));
+      }
+    }
+
+    if (state.lancTab==='vavr' && state.vavrs.length > 1) {
+      const activeKey = state.lancSubTab || 'vavr_todos';
+      const subTabs = [{key:'vavr_todos',label:'Todos'},...state.vavrs.map(v=>({key:'vavr_'+v.id,label:v.nome||v.marca}))];
+      const gridCols = subTabs.length <= 3 ? subTabs.length : 3;
+      subTabsHtml = `<div style="display:grid;grid-template-columns:repeat(${gridCols},1fr);gap:6px;padding:0 20px 12px;flex-shrink:0">
+        ${subTabs.map(t=>{
+          const isActive=activeKey===t.key;
+          const bg=isActive?'#f59e0b':'var(--bg3)';
+          const bc=isActive?'#f59e0b':'var(--border2)';
+          const tx=isActive?'#fff':'var(--text2)';
+          return `<div data-subtab="${t.key}" style="display:flex;align-items:center;justify-content:center;gap:5px;padding:7px 6px;border-radius:12px;border:0.5px solid ${bc};background:${bg};cursor:pointer;transition:all 0.15s"><span style="font-size:12px;font-weight:500;color:${tx}">${t.label}</span></div>`;
+        }).join('')}
+      </div>`;
+      if (activeKey !== 'vavr_todos') {
+        const vid = parseInt(activeKey.replace('vavr_',''));
+        lancs = lancs.filter(l=>l.vavrId===vid);
       }
     }
 
@@ -797,6 +957,12 @@ const App = (() => {
             <span style="font-size:12px;color:var(--text3)">Pago: <span style="color:var(--red);font-weight:600">-${fmtMoney(totalFixosPagos)}</span></span>
             <span style="font-size:12px;color:var(--text3)">Pendente: <span style="color:var(--text2);font-weight:600">-${fmtMoney(totalFixosPendentes)}</span></span>
           </div>
+        </div>`;
+      } else if (state.lancTab==='vavr') {
+        const totalVavr = lancs.reduce((s,l)=>s+(l.valor||0),0);
+        totaisHtml = `<div style="margin:0 20px 12px;padding:12px 16px;background:var(--bg3);border-radius:14px;display:flex;align-items:center;justify-content:space-between">
+          <span style="font-size:12px;color:var(--text3)">${lancs.length} gasto${lancs.length!==1?'s':''} no mês</span>
+          <span style="font-size:15px;font-weight:700;color:#f59e0b">-${fmtMoney(totalVavr)}</span>
         </div>`;
       } else {
         // Todos
@@ -892,7 +1058,7 @@ const App = (() => {
     document.querySelectorAll('.type-tab').forEach(t=>{
       t.className='type-tab'+(t.dataset.type===tipo?` active-${tipo}`:'');
     });
-    const titles={entrada:'Nova entrada',entrada_fixa:'Nova entrada fixa',fixo:'Novo gasto fixo',debito:'Nova saída (débito)',credito:'Nova compra (crédito)'};
+    const titles={entrada:'Nova entrada',entrada_fixa:'Nova entrada fixa',fixo:'Novo gasto fixo',debito:'Nova saída (débito)',credito:'Nova compra (crédito)',vavr:'Novo gasto VA/VR'};
     document.getElementById('novo-title').textContent=state.editingId?'Editar lançamento':titles[tipo];
     renderForm();
   }
@@ -991,6 +1157,40 @@ const App = (() => {
         <button class="submit-btn btn-debito" onclick="App._salvar()">${state.editingId?'Salvar alterações':'Salvar saída'}</button>
         ${btnExcluir}<div style="height:20px"></div>`;
     }
+    else if (tipo==='vavr') {
+      const vavrSel = edit?.vavrId || state.vavrs[0]?.id;
+      // Selecionar categoria Alimentação por padrão
+      const catAlim = state.categorias.find(c=>c.nome==='Alimentação'&&c.tipo==='saida');
+      const catVavrSel = edit?.categoriaId || catAlim?.id || cats[0]?.id;
+      const catVavrObj = getCatById(catVavrSel);
+      const subcatsVavrHtml = (catVavrObj?.subcats||[]).map(s=>{
+        const nome=typeof s==='string'?s:s.nome;
+        const em=typeof s==='object'?s.emoji:'';
+        return `<div class="subcat-chip ${nome===edit?.subcat?'sel':''}" onclick="App._selSubcat(this,'${nome}')" data-subcat="${nome}">${em?em+' ':''}${nome}</div>`;
+      }).join('');
+      const campoVavrCat=`<div class="field"><div class="field-label">Categoria</div>
+        <div class="cat-grid" id="cat-grid">
+          ${cats.map(c=>`<div class="cat-chip ${c.id===catVavrSel?'sel':''}" onclick="App._selCat(${c.id})" data-catid="${c.id}">
+            <div class="cat-emoji">${c.emoji}</div><div class="cat-name">${c.nome}</div></div>`).join('')}
+        </div>
+        <div class="subcat-row" id="subcat-row">${subcatsVavrHtml}</div></div>`;
+      el.innerHTML=`${campoValor}
+        <div class="field"><div class="field-label">Cartão VA/VR</div>
+          <div class="cat-grid" id="vavr-grid">
+            ${state.vavrs.map(v=>`<div class="cat-chip ${v.id===vavrSel?'sel':''}" data-vavr="${v.id}" onclick="App._selVavr(this,${v.id})">
+              <div class="cat-emoji" style="height:32px;display:flex;align-items:center;justify-content:center">${getVavrIconHtml(v.marca,26)}</div>
+              <div class="cat-name">${v.nome||v.marca}</div></div>`).join('')}
+          </div></div>
+        ${campoVavrCat}
+        <div class="field"><div class="field-label">Data</div>
+          <input type="date" id="f-data" value="${edit?.data||today}"></div>
+        ${campoDesc}
+        <button class="submit-btn" style="background:#f59e0b;color:#fff" onclick="App._salvar()">${state.editingId?'Salvar alterações':'Salvar gasto VA/VR'}</button>
+        ${btnExcluir}<div style="height:20px"></div>`;
+      setTimeout(()=>{
+        if(catVavrSel) _selCat(catVavrSel,true);
+      },50);
+    }
     else if (tipo==='credito') {
       const cartaoSel=edit?.cartaoId||state.cartoes[0]?.id;
       el.innerHTML=`
@@ -1061,6 +1261,10 @@ const App = (() => {
     document.querySelectorAll('#cartao-grid .cat-chip').forEach(c=>c.classList.remove('sel'));
     el.classList.add('sel');
     _updateParcelas();
+  }
+  function _selVavr(el,id){
+    document.querySelectorAll('#vavr-grid .cat-chip').forEach(c=>c.classList.remove('sel'));
+    el.classList.add('sel');
   }
   function _updateParcelas(){
     const valEl=document.getElementById('f-valor');
@@ -1164,6 +1368,12 @@ const App = (() => {
     }
     else if(tipo==='debito'){
       obj.valor=valor; obj.data=data;
+    }
+    else if(tipo==='vavr'){
+      const vavrEl=document.querySelector('#vavr-grid .cat-chip.sel');
+      const vavrId=vavrEl?parseInt(vavrEl.dataset.vavr):state.vavrs[0]?.id;
+      if(!vavrId){toast('Selecione um cartão VA/VR','err');return;}
+      obj.valor=valor; obj.data=data; obj.vavrId=vavrId;
     }
     else if(tipo==='credito'){
       const n=parseInt(document.getElementById('f-parcelas')?.value||'1');
@@ -2514,7 +2724,7 @@ const App = (() => {
   ══════════════════════════════════════ */
   function setCfgTab(tab){
     state.cfgTab=tab;
-    ['categorias','cartoes','aparencia','dados'].forEach(t=>document.getElementById('ct-'+t)?.classList.toggle('active',t===tab));
+    ['categorias','cartoes','vavr','aparencia','dados'].forEach(t=>document.getElementById('ct-'+t)?.classList.toggle('active',t===tab));
     renderPerfil();
   }
 
@@ -2523,6 +2733,7 @@ const App = (() => {
     el.innerHTML='<div class="spinner"></div>';
     if(state.cfgTab==='categorias') await renderCfgCategorias(el);
     else if(state.cfgTab==='cartoes') await renderCfgCartoes(el);
+    else if(state.cfgTab==='vavr') await renderCfgVavr(el);
     else if(state.cfgTab==='aparencia') await renderCfgAparencia(el);
     else await renderCfgDados(el);
   }
@@ -2642,6 +2853,57 @@ const App = (() => {
       <div style="height:8px"></div>`;
   }
 
+  async function renderCfgVavr(el){
+    el.innerHTML=state.vavrs.map(v=>{
+      const iconHtml=getVavrIconHtml(v.marca,36);
+      return `<div class="cartao-cfg-card">
+        <div class="cartao-cfg-header">
+          ${iconHtml}
+          <div class="cartao-cfg-info"><div class="cartao-cfg-nome">${v.nome||v.marca}</div><div class="cartao-cfg-datas">${v.marca} · Recarga dia ${v.diaRecarga}</div></div>
+        </div>
+        <div class="cartao-cfg-body">
+          <div class="cartao-cfg-fields">
+            <div><div class="cartao-cfg-field-label">Dia recarga</div><input type="number" min="1" max="28" value="${v.diaRecarga}" onchange="App._updateVavr(${v.id},'diaRecarga',this.value)"></div>
+            <div><div class="cartao-cfg-field-label">Valor recarga</div><input type="text" value="${(v.valorRecarga||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}" oninput="App._maskMoney(this)" onchange="App._updateVavr(${v.id},'valorRecarga',this.value)"></div>
+            <div style="grid-column:1/-1"><div class="cartao-cfg-field-label">Saldo inicial</div><input type="text" value="${(v.saldoInicial||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}" oninput="App._maskMoney(this)" onchange="App._updateVavr(${v.id},'saldoInicial',this.value)"></div>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:12px">
+            <button class="action-btn secondary" style="margin:0;flex:1;padding:10px;font-size:13px" onclick="App._editVavr(${v.id})"><svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>Editar</button>
+            <button class="action-btn danger" style="margin:0;flex:1;padding:10px;font-size:13px" onclick="App._deleteVavr(${v.id})"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>Excluir</button>
+          </div>
+        </div>
+      </div>`;
+    }).join('')+`
+      <button class="action-btn primary" onclick="App._openAddVavr()"><svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Adicionar VA/VR</button>
+      <div style="height:8px"></div>`;
+  }
+
+  async function _updateVavr(id,field,val){
+    const v=getVavrById(id);if(!v) return;
+    v[field]=field==='diaRecarga'?(parseInt(val)||1):(parseMoneyInput(val)||0);
+    await DB.saveVavr(v);state.vavrs=await DB.getVavrs();toast('VA/VR atualizado','ok');
+  }
+  function _openAddVavr(){openModal('add-vavr',{});}
+  function _editVavr(id){openModal('edit-vavr',getVavrById(id));}
+  async function _deleteVavr(id){
+    if(!confirm('Excluir este VA/VR?')) return;
+    await DB.deleteVavr(id);state.vavrs=await DB.getVavrs();renderPerfil();toast('VA/VR excluído','info');
+  }
+  async function _saveVavr(id){
+    const nome=document.getElementById('m-vavr-nome')?.value?.trim();
+    const marca=document.getElementById('m-vavr-marca')?.value?.trim();
+    if(!marca){toast('Informe a marca','err');return;}
+    const diaRecarga=parseInt(document.getElementById('m-vavr-dia')?.value||'5');
+    const valorRecarga=parseMoneyInput(document.getElementById('m-vavr-valor')?.value||'0');
+    const saldoInicial=parseMoneyInput(document.getElementById('m-vavr-saldo')?.value||'0');
+    const dataCadastro=todayStr();
+    const existing=id!==null?getVavrById(id):null;
+    const obj=existing?{...existing,nome,marca,diaRecarga,valorRecarga}:{nome,marca,diaRecarga,valorRecarga,saldoInicial,dataCadastro};
+    if(id!==null) obj.id=id;
+    await DB.saveVavr(obj);state.vavrs=await DB.getVavrs();
+    closeModal();renderPerfil();toast(id!==null?'VA/VR atualizado':'VA/VR adicionado','ok');
+  }
+
   async function _updateCartao(id,field,val){
     const c=getCartaoById(id);if(!c) return;
     c[field]=field==='limite'?parseMoneyInput(val):(parseFloat(val)||val);
@@ -2720,7 +2982,7 @@ const App = (() => {
         const ma=mesAnoStr(state.currentMonth,state.currentYear);
         const maHoje=mesAnoStr(new Date().getMonth(),new Date().getFullYear());
         await DB.ensureFixosMes(ma,maHoje);
-        state.categorias=await DB.getCategorias();state.cartoes=await DB.getCartoes();
+        state.categorias=await DB.getCategorias();state.cartoes=await DB.getCartoes();state.vavrs=await DB.getVavrs();
         state.lancamentos=await DB.getLancamentos(ma);
         toast('Backup importado!','ok');renderPerfil();
       }catch(err){toast('Arquivo inválido','err');}
@@ -2730,7 +2992,7 @@ const App = (() => {
   async function _limpar(){
     if(!confirm('Tem certeza? Todos os dados serão apagados.')) return;
     await DB.clearAll();await DB.seedDefaults();
-    state.categorias=await DB.getCategorias();state.cartoes=await DB.getCartoes();state.lancamentos=[];
+    state.categorias=await DB.getCategorias();state.cartoes=await DB.getCartoes();state.vavrs=await DB.getVavrs();state.lancamentos=[];
     toast('Dados apagados','info');renderPerfil();
   }
 
@@ -2778,6 +3040,32 @@ const App = (() => {
         <div class="modal-btns"><button class="btn-cancel" onclick="App.closeModal()">Cancelar</button>
           <button class="btn-save" onclick="App._saveCartao(${isEdit?data.id:'null'})">Salvar</button></div>`;
     }
+    else if(type==='add-vavr'||type==='edit-vavr'){
+      const isEdit=type==='edit-vavr';
+      content.innerHTML=`<div class="modal-title">${isEdit?'Editar VA/VR':'Novo cartão VA/VR'}</div>
+        <div class="field"><div class="field-label">Nome <span class="opt-badge">opcional</span></div><input type="text" id="m-vavr-nome" placeholder="Ex: Meu Alelo" value="${isEdit?(data.nome||''):''}"></div>
+        <div class="field"><div class="field-label">Marca</div>
+          <input type="text" id="m-vavr-marca" placeholder="Ex: Alelo, Ticket, Swile..." value="${isEdit?data.marca:''}" oninput="App._previewVavrIcon(this.value)">
+          <div id="vavr-icon-preview" style="margin-top:8px;display:flex;align-items:center;gap:8px;min-height:36px"></div>
+        </div>
+        <div class="row2">
+          <div class="field"><div class="field-label">Dia da recarga</div><input type="number" id="m-vavr-dia" min="1" max="28" value="${isEdit?data.diaRecarga:5}"></div>
+          <div class="field"><div class="field-label">Valor da recarga</div>
+            <div class="valor-wrap"><span class="valor-prefix">R$</span>
+              <input type="text" inputmode="numeric" id="m-vavr-valor" oninput="App._maskMoney(this)"
+                value="${isEdit?(data.valorRecarga||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}):''}">
+            </div></div>
+        </div>
+        ${!isEdit?`<div class="field"><div class="field-label">Saldo inicial</div>
+          <div class="valor-wrap"><span class="valor-prefix">R$</span>
+            <input type="text" inputmode="numeric" id="m-vavr-saldo" oninput="App._maskMoney(this)" placeholder="0,00">
+          </div>
+          <div style="font-size:11px;color:var(--text3);margin-top:5px">Saldo que você já tem no cartão hoje</div>
+        </div>`:'<input type="hidden" id="m-vavr-saldo" value="0">'}
+        <div class="modal-btns"><button class="btn-cancel" onclick="App.closeModal()">Cancelar</button>
+          <button class="btn-save" onclick="App._saveVavr(${isEdit?data.id:'null'})">Salvar</button></div>`;
+      if(isEdit) setTimeout(()=>_previewVavrIcon(data.marca),50);
+    }
     else if(type==='confirm-delete-parcelas'){
       content.innerHTML=`<div class="modal-title">Excluir compra parcelada</div>
         <p style="font-size:14px;color:var(--text2);line-height:1.6;margin-bottom:20px">Esta compra tem ${data.totalParcelas} parcelas. Excluir todas ou só esta?</p>
@@ -2813,6 +3101,13 @@ const App = (() => {
   function closeModal(e){
     if(!e||e.target===document.getElementById('modal-overlay'))
       document.getElementById('modal-overlay').classList.remove('open');
+  }
+
+  function _previewVavrIcon(marca) {
+    const el = document.getElementById('vavr-icon-preview');
+    if (!el) return;
+    const iconHtml = getVavrIconHtml(marca, 32);
+    el.innerHTML = marca ? `${iconHtml}<span style="font-size:12px;color:var(--text3)">${marca}</span>` : '';
   }
 
   async function _saveCategoria(id,tipo){
@@ -3586,6 +3881,7 @@ const App = (() => {
     setCfgTab,_toggleCatRow,
     _openAddCat,_openEditCat,_deleteCategoria,_openAddSubcat,_openEditSubcat,_deleteSubcat,
     _openAddCartao,_editCartao,_deleteCartao,_updateCartao,
+    _openAddVavr,_editVavr,_deleteVavr,_updateVavr,_saveVavr,_previewVavrIcon,_selVavr,_abrirVavrNaAba,
     _toggleCartaoExpandido,_abrirCartaoNaAba,_setCartaoBSPeriodo,_setCartaoBSFatura,
     _exportar,_importar,_limpar,_setTema,
     openModal,closeModal,_selColor,_onCustomColor,
