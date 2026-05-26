@@ -274,13 +274,11 @@ const App = (() => {
       ? `${dataCadastro.slice(5,7)}-${dataCadastro.slice(0,4)}`
       : mesHoje;
 
-    // Contar recargas: a partir do mês SEGUINTE ao cadastro, dia diaRecarga <= hoje
+    // Contar recargas: a partir do mês de cadastro (inclusive), se diaRecarga <= hoje
     let recargas = 0;
-    // Primeiro mês com recarga = mês seguinte ao de cadastro
     const [dcAno, dcMes] = dataCadastro.split('-').map(Number);
-    let rAno = dcAno, rMes = dcMes + 1;
-    if (rMes > 12) { rMes = 1; rAno++; }
-    const dataHojeObj = new Date(hoje + 'T12:00:00');
+    let rAno = dcAno, rMes = dcMes;
+
     // Iterar meses de recarga até hoje
     while (true) {
       const diaR = String(vavr.diaRecarga).padStart(2,'0');
