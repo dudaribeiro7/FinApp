@@ -817,7 +817,7 @@ select option{background:var(--bg3)}
 
     <!-- metric cards -->
     <div class="metric-grid">
-      <div class="metric-card">
+      <div class="metric-card" onclick="App.irParaLancamentos('entradas')" style="cursor:pointer">
         <div class="metric-top">
           <span class="metric-label">Entradas</span>
           <div class="metric-dot" style="background:var(--green)"></div>
@@ -826,7 +826,7 @@ select option{background:var(--bg3)}
         <div class="metric-sub" id="h-entradas-sub">0 lançamentos</div>
         <div class="metric-pending" id="h-entradas-pending" style="display:none"></div>
       </div>
-      <div class="metric-card">
+      <div class="metric-card" onclick="App.irParaLancamentos('saidas')" style="cursor:pointer">
         <div class="metric-top">
           <span class="metric-label">Saídas (débito)</span>
           <div class="metric-dot" style="background:var(--red)"></div>

@@ -827,6 +827,10 @@ const App = (() => {
     ['todos','entradas','saidas','fixos','vavr'].forEach(t=>document.getElementById('lt-'+t)?.classList.toggle('active',t===tab));
     renderLancamentos();
   }
+  function irParaLancamentos(tab) {
+    setLancTab(tab);
+    gotoScreen('screen-lancamentos');
+  }
   function setLancSubTab(sub) { state.lancSubTab=sub; renderLancamentos(); }
 
   function renderLancamentos() {
@@ -3867,7 +3871,7 @@ const App = (() => {
     gotoScreen,goBack,novoLancamento,changeMonth,
     renderHome,renderLancamentos,renderRelatorios,renderPerfil,
     renderParcelamentos,_parcFiltroCartao,_abrirFiltroCatParc,_toggleFiltCatParc,_limparFiltCatParc,_parcToggleItem,_parcToggleImpacto,
-    setLancTab,setLancSubTab,editLancamento,toggleFixoPago,
+    setLancTab,setLancSubTab,irParaLancamentos,editLancamento,toggleFixoPago,
     abrirCartao,abrirFiltroCategoria,_toggleFiltroItem,limparFiltroCategoria,
     setTipoLanc,_maskMoney,_selCat,_selSubcat,_selPay,_selCartao,_updateParcelas,
     _salvar,_deletar,_deletarTodasParcelas,_deletarUmaParcela,_deletarFixoTemplate,_deletarUmFixo,
