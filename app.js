@@ -828,7 +828,10 @@ const App = (() => {
     renderLancamentos();
   }
   function irParaLancamentos(tab) {
-    setLancTab(tab);
+    state.lancTab = tab;
+    state.lancSubTab = tab === 'saidas' ? 'debito' : null;
+    state.cartaoFiltro = null;
+    ['todos','entradas','saidas','fixos','vavr'].forEach(t=>document.getElementById('lt-'+t)?.classList.toggle('active',t===tab));
     gotoScreen('screen-lancamentos');
   }
   function setLancSubTab(sub) { state.lancSubTab=sub; renderLancamentos(); }
