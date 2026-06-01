@@ -1807,7 +1807,9 @@ const App = (() => {
       if (dc && l.parcela) return _dataParcela(dc, l.parcela);
       return dc;
     }
-    return l.data;
+    // Para débito, fixo e entrada: preferir dataPagamento (data real de pagamento)
+    // e só usar data prevista como fallback
+    return l.dataPagamento || l.data;
   }
 
   // Pega o "valor efetivo" do lançamento para somatórios
