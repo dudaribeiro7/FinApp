@@ -1599,13 +1599,22 @@ const App = (() => {
     toast('Lançamento excluído','info'); goBack();
   }
 
-  function editLancamento(id){
-    const l=state.lancamentos.find(x=>x.id===id);
+  async function editLancamento(id){
+    let l=state.lancamentos.find(x=>x.id===id);
+    if(!l){
+      // Lançamento pode estar em outro mês (ex: parcela de crédito acessada via Cartões)
+      const all=await DB.getAllLancamentos();
+      l=all.find(x=>x.id===id);
+    }
     if(!l) return;
     // Fatura automática: não editável
     if(l.autoFatura) {
       toast('Este lançamento é gerado automaticamente e não pode ser editado','info',3000);
       return;
+    }
+    // Garantir que state.lancamentos tenha o mês do lançamento para que o form preencha corretamente
+    if(!state.lancamentos.find(x=>x.id===id)){
+      state.lancamentos=await DB.getLancamentos(l.mesAno);
     }
     state.editingId=id;
     gotoScreen('screen-novo');
@@ -3104,7 +3113,69 @@ const App = (() => {
           <button class="btn-cancel" onclick="App.closeModal()">Cancelar</button>
         </div>`;
     }
+    else if(type==='antecipar-parcelas'){
+      DB.getAllLancamentos().then(all => {
+        const parcelas = all.filter(l => l.grupoId === data.grupoId && l.tipo === 'credito');
+        parcelas.sort((a,b)=>(a.parcela||0)-(b.parcela||0));
+        const cartao = getCartaoById(parcelas[0]?.cartaoId);
+        const pendentes = parcelas.filter(p => !isParcelaPaga(p.mesPagamento||p.mesAno, cartao));
+        const n = pendentes.length;
+        if(n === 0){ toast('Todas as parcelas já estão pagas','info'); closeModal(); return; }
+        const valorParcela = pendentes[0].valorParcela || 0;
+        const cor = cartao?.cor || 'var(--accent)';
+        const hoje = new Date();
+        const mesAtualKey = mesAnoStr(hoje.getMonth(), hoje.getFullYear());
+        const opts = Array.from({length:n},(_,i)=>i+1)
+          .map(i=>`<option value="${i}">${i === n ? 'Todas ('+i+')' : i}</option>`).join('');
+        content.innerHTML=`
+          <div class="modal-title">⚡ Antecipar parcelas</div>
+          <p style="font-size:13px;color:var(--text2);margin-bottom:16px;line-height:1.5">
+            <strong style="color:${cor}">${n}</strong> parcelas pendentes de
+            <strong style="color:${cor}">${fmtMoney(valorParcela)}/mês</strong>.<br>
+            O valor será lançado na fatura atual (<strong>${mesAtualKey.replace('-','/')}</strong>).
+          </p>
+          <div class="field">
+            <div class="field-label">Quantas parcelas antecipar</div>
+            <select id="ant-qtd" data-valor="${valorParcela}" onchange="App._antPreview()" style="width:100%;padding:10px;border-radius:10px;background:var(--bg3);border:1.5px solid var(--border);color:var(--text);font-size:14px">
+              ${opts}
+            </select>
+          </div>
+          <div class="field">
+            <div class="field-label">Desconto <span class="opt-badge">opcional</span></div>
+            <div class="valor-wrap"><span class="valor-prefix">R$</span>
+              <input type="text" inputmode="numeric" id="ant-desconto" oninput="App._maskMoney(this);App._antPreview()" placeholder="0,00">
+            </div>
+          </div>
+          <div id="ant-preview" style="margin-top:4px;padding:12px;border-radius:10px;background:var(--bg3);font-size:13px;color:var(--text2);line-height:1.9"></div>
+          <div class="modal-btns" style="margin-top:16px">
+            <button class="btn-cancel" onclick="App.closeModal()">Cancelar</button>
+            <button class="btn-save" style="background:${cor}" onclick="App._confirmarAntecipar(${data.grupoId})">Confirmar</button>
+          </div>`;
+        setTimeout(()=>_antPreview(), 50);
+      });
+    }
     document.getElementById('modal-overlay').classList.add('open');
+  }
+
+  function _abrirAntecipar(grupoId) {
+    openModal('antecipar-parcelas', { grupoId });
+  }
+
+  function _antPreview() {
+    const qtdEl = document.getElementById('ant-qtd');
+    const descEl = document.getElementById('ant-desconto');
+    const prevEl = document.getElementById('ant-preview');
+    if (!qtdEl || !prevEl) return;
+    const qtd = parseInt(qtdEl.value) || 1;
+    const valorParcela = parseFloat(qtdEl.dataset.valor || '0');
+    const descStr = (descEl?.value||'').replace(/\./g,'').replace(',','.');
+    const desc = parseFloat(descStr) || 0;
+    const totalBruto = valorParcela * qtd;
+    const totalFinal = Math.max(totalBruto - desc, 0);
+    prevEl.innerHTML = `
+      <div style="display:flex;justify-content:space-between"><span>${qtd} parcela${qtd>1?'s':''} × ${fmtMoney(valorParcela)}</span><span style="font-family:'DM Mono',monospace">${fmtMoney(totalBruto)}</span></div>
+      ${desc > 0 ? `<div style="display:flex;justify-content:space-between"><span style="color:var(--green)">Desconto</span><span style="font-family:'DM Mono',monospace;color:var(--green)">- ${fmtMoney(desc)}</span></div>` : ''}
+      <div style="display:flex;justify-content:space-between;font-weight:600;border-top:0.5px solid var(--border);margin-top:6px;padding-top:6px"><span>Total a pagar</span><span style="font-family:'DM Mono',monospace">${fmtMoney(totalFinal)}</span></div>`;
   }
 
   function closeModal(e){
@@ -3743,6 +3814,7 @@ const App = (() => {
               <span style="font-size:11px;color:var(--text3)">Total pago</span>
               <span style="font-size:11px;font-family:'DM Mono',monospace;color:var(--green)">${fmtMoney(c.totalPago)}</span>
             </div>
+            ${c.restantes > 0 ? `<button onclick="event.stopPropagation();App._abrirAntecipar(${c.grupoId})" style="margin-top:10px;width:100%;padding:9px;border-radius:10px;border:none;background:${cor}18;color:${cor};font-size:13px;font-weight:600;cursor:pointer">⚡ Antecipar parcelas</button>` : ''}
           </div>
         </div>
         ${aberto?`<div style="text-align:center;margin-top:6px"><span style="font-size:10px;color:var(--text3)">▲ fechar</span></div>`:`<div style="text-align:center;margin-top:6px"><span style="font-size:10px;color:var(--text3)">▼ ver parcelas</span></div>`}
@@ -3872,10 +3944,89 @@ const App = (() => {
   }
   function _parcToggleImpacto() { state.parcImpactoVisible = !state.parcImpactoVisible; _reRenderParc(); }
 
+  async function _confirmarAntecipar(grupoId) {
+    const qtdEl = document.getElementById('ant-qtd');
+    const descEl = document.getElementById('ant-desconto');
+    if (!qtdEl) return;
+    const qtd = parseInt(qtdEl.value) || 1;
+    const valorParcela = parseFloat(qtdEl.dataset.valor || '0');
+    const descStr = (descEl?.value||'').replace(/\./g,'').replace(',','.');
+    const desc = parseFloat(descStr) || 0;
+    const totalFinal = Math.max(valorParcela * qtd - desc, 0);
+
+    const all = await DB.getAllLancamentos();
+    const parcelas = all.filter(l => l.grupoId === grupoId && l.tipo === 'credito');
+    parcelas.sort((a,b)=>(a.parcela||0)-(b.parcela||0));
+    const cartao = getCartaoById(parcelas[0]?.cartaoId);
+    const pendentes = parcelas.filter(p => !isParcelaPaga(p.mesPagamento||p.mesAno, cartao));
+
+    if (qtd > pendentes.length) { toast('Número de parcelas inválido','err'); return; }
+
+    const hoje = new Date();
+    const mesAtualKey = mesAnoStr(hoje.getMonth(), hoje.getFullYear());
+    const ref = pendentes[0]; // usa dados da primeira pendente como referência
+
+    // Parcelas a antecipar (as primeiras `qtd` pendentes)
+    const aAntecipar = pendentes.slice(0, qtd);
+    const restantes = pendentes.slice(qtd);
+
+    // 1. Excluir as parcelas antecipadas
+    for (const p of aAntecipar) {
+      await DB.deleteLancamento(p.id);
+    }
+
+    // 2. Se há parcelas restantes, renumerar para manter consistência
+    if (restantes.length > 0) {
+      // Recalcular totalParcelas e parcela para as restantes
+      const totalOriginal = ref.totalParcelas || parcelas.length;
+      const novoTotal = totalOriginal - qtd;
+      for (let i = 0; i < restantes.length; i++) {
+        const p = restantes[i];
+        await DB.updateLancamento({
+          ...p,
+          parcela: (p.parcela || (i+1+aAntecipar.length)) - qtd,
+          totalParcelas: novoTotal,
+        });
+      }
+    }
+
+    // 3. Criar lançamento único na fatura atual com o valor total antecipado
+    const descricaoAnt = ref.descricao
+      ? `${ref.descricao} (antecipação ${qtd}x)`
+      : `Antecipação ${qtd}x`;
+    const novoLanc = {
+      tipo: 'credito',
+      descricao: descricaoAnt,
+      categoriaId: ref.categoriaId,
+      subcat: ref.subcat || null,
+      cartaoId: ref.cartaoId,
+      valorParcela: totalFinal,
+      valorTotal: totalFinal,
+      parcela: 1,
+      totalParcelas: 1,
+      mesAno: ref.mesAno, // mês da compra original
+      mesPagamento: mesAtualKey, // cobrado na fatura atual
+      dataCompra: ref.dataCompra || ref.data,
+      data: ref.dataCompra || ref.data,
+      grupoId: null, // lançamento avulso (não faz parte de grupo)
+      criadoEm: Date.now(),
+    };
+    await DB.addLancamento(novoLanc);
+
+    // 4. Atualizar fatura automática do cartão
+    if (ref.cartaoId) await atualizarFaturaFixa(ref.cartaoId);
+
+    closeModal();
+    toast(`${qtd} parcela${qtd>1?'s':''} antecipada${qtd>1?'s':''}!`, 'ok');
+    state.lancamentos = await DB.getLancamentos(mesAnoStr(state.currentMonth, state.currentYear));
+    _reRenderParc();
+  }
+
   return {
     gotoScreen,goBack,novoLancamento,changeMonth,
     renderHome,renderLancamentos,renderRelatorios,renderPerfil,
     renderParcelamentos,_parcFiltroCartao,_abrirFiltroCatParc,_toggleFiltCatParc,_limparFiltCatParc,_parcToggleItem,_parcToggleImpacto,
+    _abrirAntecipar,_antPreview,_confirmarAntecipar,
     setLancTab,setLancSubTab,irParaLancamentos,editLancamento,toggleFixoPago,
     abrirCartao,abrirFiltroCategoria,_toggleFiltroItem,limparFiltroCategoria,
     setTipoLanc,_maskMoney,_selCat,_selSubcat,_selPay,_selCartao,_updateParcelas,
