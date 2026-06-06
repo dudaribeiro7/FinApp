@@ -1123,7 +1123,7 @@ const App = (() => {
         ${btnExcluir}<div style="height:20px"></div>`;
     }
     else if (tipo==='fixo') {
-      const tipoSel=edit?.pagamento||'debito';
+      const tipoSel=String(edit?.pagamento||'debito');
       const temDiaFixo = edit?.diaDoMes ? true : false;
       // Se tem diaDoMes, usa lógica automática (sem toggle pago manual)
       el.innerHTML=`${campoValor}
@@ -3517,6 +3517,28 @@ const App = (() => {
     localStorage.setItem('migr_mes_pagamento_v4', '1');
   }
 
+  async function migrarFixosPagamentoParaString() {
+    // v6: normalizar campo pagamento de fixos que possam ter sido salvos como número inteiro
+    // (em vez de string). Isso causava o chip do cartão não ficar selecionado ao editar,
+    // resultando em pagamento='debito' ao salvar.
+    const jaRodou = localStorage.getItem('migr_fixos_pagamento_str_v6');
+    if (jaRodou) return;
+    const allLancs = await DB.getAllLancamentos();
+    const fixos = allLancs.filter(l => l.tipo === 'fixo' && !l.autoFatura && typeof l.pagamento === 'number');
+    for (const l of fixos) {
+      await DB.updateLancamento({ ...l, pagamento: String(l.pagamento) });
+    }
+    // Normalizar templates também
+    const templates = await DB.getFixosTemplates();
+    for (const t of templates) {
+      if (t.tipo === 'fixo' && typeof t.pagamento === 'number') {
+        await DB.saveFixoTemplate({ ...t, pagamento: String(t.pagamento) });
+      }
+    }
+    console.log('[migração v6] ' + fixos.length + ' fixos com pagamento normalizado para string');
+    localStorage.setItem('migr_fixos_pagamento_str_v6', '1');
+  }
+
   async function migrarFixosCreditoMesPagamento() {
     // v5: setar mesPagamento nos gastos fixos pagos no crédito,
     // calculado a partir da data efetiva do pagamento e da regra do cartão.
@@ -3562,6 +3584,7 @@ const App = (() => {
     await migrarParcelasParaRegraOficial();
     await migrarMesAnoParaCompra();
     await migrarMesPagamentoV4();
+    await migrarFixosPagamentoParaString();
     await migrarFixosCreditoMesPagamento();
     // Recalcular faturas automáticas para todos os cartões
     for(const c of state.cartoes) await atualizarFaturaFixa(c.id);
