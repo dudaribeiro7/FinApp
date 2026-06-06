@@ -440,7 +440,7 @@ const App = (() => {
                           .reduce((s,l)=>s+(l.valor||0),0);
     // Saídas débito efetivadas (data <= limiteConfirmacao) — débitos sem data não contam
     const debitos = lancs.filter(l=>l.tipo==='debito' && l.data && l.data<=limiteConfirmacao).reduce((s,l)=>s+(l.valor||0),0);
-    const fixosDeb = lancs.filter(l=>l.tipo==='fixo'&&l.pago&&l.pagamento==='debito').reduce((s,l)=>s+(l.valor||0),0);
+    const fixosDeb = lancs.filter(l=>l.tipo==='fixo'&&l.pago&&l.pagamento==='debito'&&!l.cartaoId).reduce((s,l)=>s+(l.valor||0),0);
     return saldoIni + entradas - debitos - fixosDeb;
   }
 
@@ -461,7 +461,7 @@ const App = (() => {
     // saídas no débito apenas (item 4) — apenas efetivados (data <= hoje)
     const debitos = lancs.filter(l=>l.tipo==='debito' && isDateConfirmed(l.data)).reduce((s,l)=>s+(l.valor||0),0);
     const debitosPend = lancs.filter(l=>l.tipo==='debito' && !isDateConfirmed(l.data)).reduce((s,l)=>s+(l.valor||0),0);
-    const fixosDebPagos = lancs.filter(l=>l.tipo==='fixo'&&l.pago&&l.pagamento==='debito').reduce((s,l)=>s+(l.valor||0),0);
+    const fixosDebPagos = lancs.filter(l=>l.tipo==='fixo'&&l.pago&&l.pagamento==='debito'&&!l.cartaoId).reduce((s,l)=>s+(l.valor||0),0);
     const totalSaidasDebito = debitos + fixosDebPagos;
 
     // crédito por cartão (para exibição nos chips, não soma no saldo)
@@ -499,7 +499,7 @@ const App = (() => {
 
     // Saídas = só débito (item 4)
     document.getElementById('h-saidas').textContent = fmtMoney(totalSaidasDebito);
-    const nSaidasDeb = lancs.filter(l=>(l.tipo==='debito'&&isDateConfirmed(l.data))||(l.tipo==='fixo'&&l.pago&&l.pagamento==='debito')).length;
+    const nSaidasDeb = lancs.filter(l=>(l.tipo==='debito'&&isDateConfirmed(l.data))||(l.tipo==='fixo'&&l.pago&&l.pagamento==='debito'&&!l.cartaoId)).length;
     document.getElementById('h-saidas-sub').textContent = `${nSaidasDeb} lançamento${nSaidasDeb!==1?'s':''}`;
     const pendDebEl = document.getElementById('h-saidas-pending');
     if (debitosPend>0 && pendDebEl) { pendDebEl.style.display=''; pendDebEl.textContent=`+${fmtMoney(debitosPend)} pendente`; }
@@ -890,7 +890,7 @@ const App = (() => {
           return `<div data-subtab="${t.key}" style="display:flex;align-items:center;justify-content:center;gap:5px;padding:7px 6px;border-radius:12px;border:0.5px solid ${bc};background:${bg};cursor:pointer;transition:all 0.15s">${dot}<span style="font-size:12px;font-weight:500;color:${tx}">${t.label}</span></div>`;
         }).join('')}
       </div>`;
-      if (activeKey==='debito') lancs=lancs.filter(l=>l.tipo==='debito'||(l.tipo==='fixo'&&l.pagamento==='debito'));
+      if (activeKey==='debito') lancs=lancs.filter(l=>l.tipo==='debito'||(l.tipo==='fixo'&&l.pagamento==='debito'&&!l.cartaoId));
       else if (activeKey.startsWith('credito_')) {
         const cid=parseInt(activeKey.replace('credito_',''));
         lancs=lancs.filter(l=>(l.tipo==='credito'&&l.cartaoId===cid)||(l.tipo==='fixo'&&l.cartaoId===cid));
@@ -1653,7 +1653,7 @@ const App = (() => {
       const lancs=allLancs.filter(l=>l.mesAno===mes.key);
       const entradas=lancs.filter(l=>l.tipo==='entrada'&&l.data&&isDateConfirmed(l.data)).reduce((s,l)=>s+(l.valor||0),0);
       const debitos=lancs.filter(l=>l.tipo==='debito').reduce((s,l)=>s+(l.valor||0),0);
-      const fixosDeb=lancs.filter(l=>l.tipo==='fixo'&&l.pago&&l.pagamento==='debito').reduce((s,l)=>s+(l.valor||0),0);
+      const fixosDeb=lancs.filter(l=>l.tipo==='fixo'&&l.pago&&l.pagamento==='debito'&&!l.cartaoId).reduce((s,l)=>s+(l.valor||0),0);
       const credito=lancs.filter(l=>l.tipo==='credito').reduce((s,l)=>s+(l.valorParcela||0),0);
       const fixosCred=lancs.filter(l=>l.tipo==='fixo'&&l.pago&&l.cartaoId).reduce((s,l)=>s+(l.valor||0),0);
       const saidas=debitos+fixosDeb+credito+fixosCred;
@@ -1977,7 +1977,7 @@ const App = (() => {
     };
 
     const ent = somar(it => it.l.tipo === 'entrada');
-    const deb = somar(it => it.l.tipo === 'debito' || (it.l.tipo === 'fixo' && it.l.pagamento === 'debito'));
+    const deb = somar(it => it.l.tipo === 'debito' || (it.l.tipo === 'fixo' && it.l.pagamento === 'debito' && !it.l.cartaoId));
     const cred = somar(it => it.l.tipo === 'credito' || (it.l.tipo === 'fixo' && it.l.pagamento === 'credito'));
 
     const totalSaidas = deb.total + cred.total;
