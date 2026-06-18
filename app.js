@@ -35,6 +35,12 @@ const App = (() => {
 
   /* ── Utilitários ─────────────────────── */
   function mesAnoStr(m, y) { return `${String(m+1).padStart(2,'0')}-${y}`; }
+  // Deriva o mesAno (MM-YYYY) a partir de uma data YYYY-MM-DD do formulário
+  function mesAnoDeData(dataStr) {
+    if (!dataStr) return null;
+    const [y, m] = dataStr.split('-');
+    return `${m}-${y}`;
+  }
   // Converte "MM-YYYY" para número comparável (ex: "04-2026" → 202604)
   function mesAnoNum(key) {
     const [mm, yy] = key.split('-').map(Number);
@@ -1334,6 +1340,7 @@ const App = (() => {
 
     if(tipo==='entrada'){
       obj.valor=valor; obj.data=data;
+      obj.mesAno=mesAnoDeData(data)||mesAno;
     }
     else if(tipo==='entrada_fixa'){
       const dia=parseInt(document.getElementById('f-dia')?.value||'1');
@@ -1387,12 +1394,14 @@ const App = (() => {
     }
     else if(tipo==='debito'){
       obj.valor=valor; obj.data=data;
+      obj.mesAno=mesAnoDeData(data)||mesAno;
     }
     else if(tipo==='vavr'){
       const vavrEl=document.querySelector('#vavr-grid .cat-chip.sel');
       const vavrId=vavrEl?parseInt(vavrEl.dataset.vavr):state.vavrs[0]?.id;
       if(!vavrId){toast('Selecione um cartão VA/VR','err');return;}
       obj.valor=valor; obj.data=data; obj.vavrId=vavrId;
+      obj.mesAno=mesAnoDeData(data)||mesAno;
     }
     else if(tipo==='credito'){
       const n=parseInt(document.getElementById('f-parcelas')?.value||'1');
