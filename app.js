@@ -1810,6 +1810,7 @@ const App = (() => {
       pagamentos: [],   // [] = todos. 'debito' ou 'credito_<cartaoId>'
       catFilter: [],    // mesmo formato de lancCatFilter: [{type:'cat',id,label} | {type:'subcat',catId,nome,label}]
       mostrarParcelas: true, // true = parcelas separadas; false = compras cheias
+      considerarSaldoInicial: false, // true = soma o saldo inicial do mês ao balanço (só quando o período começa no dia 1 de um mês)
     };
   }
 
@@ -1982,6 +1983,17 @@ const App = (() => {
     _initAnaliseFiltros();
     const f = state.analiseFiltros;
 
+    // Saldo inicial do mês — opção só disponível quando o período começa no dia 1 de um mês
+    const iniEhPrimeiroDiaMes = !!(f.dataInicio && f.dataInicio.slice(8,10) === '01');
+    let saldoInicialPeriodo = 0, saldoInicialLabel = '';
+    if (iniEhPrimeiroDiaMes) {
+      const [yIniStr, mIniStr] = f.dataInicio.split('-');
+      saldoInicialLabel = `${MONTHS_SHORT[parseInt(mIniStr)-1]}/${yIniStr.slice(2)}`;
+      if (f.considerarSaldoInicial) {
+        saldoInicialPeriodo = await getSaldoInicialMes(parseInt(mIniStr)-1, parseInt(yIniStr));
+      }
+    }
+
     const allLancs = await DB.getAllLancamentos();
     const itens = _aplicarFiltrosAnalise(allLancs);
 
@@ -2002,8 +2014,8 @@ const App = (() => {
     const cred = somar(it => it.l.tipo === 'credito' || (it.l.tipo === 'fixo' && it.l.pagamento === 'credito'));
 
     const totalSaidas = deb.total + cred.total;
-    const balanco = ent.total - totalSaidas;
-    const balancoEfet = ent.efet - (deb.efet + cred.efet);
+    const balanco = ent.total - totalSaidas + saldoInicialPeriodo;
+    const balancoEfet = ent.efet - (deb.efet + cred.efet) + saldoInicialPeriodo;
 
     // Por categoria (saídas — todas)
     const catTotals = {}, subCatTotals = {};
@@ -2091,6 +2103,11 @@ const App = (() => {
           <button class="filtro-btn" onclick="App._analisePeriodoRapido('ano')">Este ano</button>
           <button class="filtro-btn" onclick="App._analisePeriodoRapido('tudo')">Tudo</button>
         </div>
+        ${iniEhPrimeiroDiaMes ? `
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:12px;padding-top:12px;border-top:0.5px solid var(--border)">
+          <span style="font-size:12px;color:var(--text2)">Considerar saldo inicial de ${saldoInicialLabel}</span>
+          <div class="toggle ${f.considerarSaldoInicial?'on':''}" onclick="App._analiseToggleSaldoInicial()"><div class="toggle-thumb"></div></div>
+        </div>` : ''}
       </div>
 
       <!-- Filtros: tipo / pagamento / categoria + modo parcelas -->
@@ -2134,6 +2151,8 @@ const App = (() => {
         ${renderBreakdown(cred, 'var(--red)')}
 
         <div style="height:0.5px;background:var(--border2);margin:6px 0"></div>
+        ${(iniEhPrimeiroDiaMes && f.considerarSaldoInicial) ? `
+        <div class="resumo-row"><span class="resumo-label" style="font-size:12px;color:var(--text3)">↳ Saldo inicial (${saldoInicialLabel})</span><span class="resumo-val" style="font-size:13px;color:${saldoInicialPeriodo>=0?'var(--green)':'var(--red)'}">${saldoInicialPeriodo>=0?'':'-'}${fmtMoney(Math.abs(saldoInicialPeriodo))}</span></div>` : ''}
         <div class="resumo-row">
           <span class="resumo-label" style="font-size:14px;font-weight:600;color:var(--text)">Balanço</span>
           <span class="resumo-val" style="font-size:16px;color:${balanco>=0?'var(--green)':'var(--red)'}">${balanco>=0?'':'-'}${fmtMoney(Math.abs(balanco))}</span>
@@ -2254,6 +2273,13 @@ const App = (() => {
     _initAnaliseFiltros();
     if (qual === 'ini') state.analiseFiltros.dataInicio = valor || null;
     else state.analiseFiltros.dataFim = valor || null;
+    _saveAnaliseFiltros();
+    renderRelatorios();
+  }
+
+  function _analiseToggleSaldoInicial() {
+    _initAnaliseFiltros();
+    state.analiseFiltros.considerarSaldoInicial = !state.analiseFiltros.considerarSaldoInicial;
     _saveAnaliseFiltros();
     renderRelatorios();
   }
@@ -4130,7 +4156,7 @@ const App = (() => {
     _salvar,_deletar,_deletarTodasParcelas,_deletarUmaParcela,_deletarFixoTemplate,_deletarUmFixo,
     _editarSoEste,_editarTodosSeguintes,_onFixoDiaChange,
     setRelTab,_setRelPeriodo,
-    _analiseSetData,_analisePeriodoRapido,_analiseLimparFiltros,_analiseToggleLista,_analiseToggleParcelas,
+    _analiseSetData,_analisePeriodoRapido,_analiseLimparFiltros,_analiseToggleLista,_analiseToggleParcelas,_analiseToggleSaldoInicial,
     _analiseRemoveTipo,_analiseRemovePag,_analiseRemoveCat,
     _analiseAbrirTipo,_analiseToggleTipo,
     _analiseAbrirPagamento,_analiseTogglePag,
