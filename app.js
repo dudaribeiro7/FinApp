@@ -262,6 +262,18 @@ const App = (() => {
     return `<img src="${url}" width="${size}" height="${size}" style="border-radius:${size/4}px;object-fit:contain;background:#fff;padding:2px;flex-shrink:0" onerror="this.style.display='none'">`;
   }
   function getCartaoById(id) { return state.cartoes.find(c=>c.id===id); }
+  // Cartões ainda ativos (não excluídos) — usar em seletores de NOVOS lançamentos e telas de gestão.
+  // Cartões excluídos permanecem em state.cartoes para que histórico (Análise, Parcelas, faturas em andamento) continue funcionando.
+  function cartoesAtivos() { return state.cartoes.filter(c=>!c.excluido); }
+  // Lista de cartões para um seletor de cartão num formulário: ativos + o cartão atual (se editando algo já vinculado a um cartão excluído)
+  function cartoesParaPicker(currentId) {
+    const ativos = cartoesAtivos();
+    if (currentId && !ativos.some(c=>c.id===currentId)) {
+      const c = getCartaoById(currentId);
+      if (c) return [...ativos, c];
+    }
+    return ativos;
+  }
 
   // Calcula o saldo acumulado do VA/VR até hoje
   // Saldo = saldoInicial + recargas ocorridas até hoje - gastos efetuados até hoje
@@ -532,7 +544,7 @@ const App = (() => {
     // Cartões — mostra FATURA ATUAL (independente do mês selecionado)
     const allLancsHome = await DB.getAllLancamentos();
     const cartaoEl = document.getElementById('h-cartoes');
-    cartaoEl.innerHTML = state.cartoes.map(c=>{
+    cartaoEl.innerHTML = cartoesAtivos().map(c=>{
       // Fatura ATUAL pela regra oficial (fatura cujo período inclui hoje)
       const { mmV, yyV, mesAnoV: mesAnoFat } = faturaAtual(c);
       const { dInicio, dFim, dVenc: dVencAtual } = periodoFatura(mesAnoFat, c);
@@ -1131,7 +1143,7 @@ const App = (() => {
           <div class="cat-grid" id="payment-grid">
             <div class="cat-chip ${tipoSel==='debito'?'sel':''}" data-pay="debito" onclick="App._selPay(this,'debito')">
               <div class="cat-emoji">🏦</div><div class="cat-name">Débito</div></div>
-            ${state.cartoes.map(c=>{const icon=getBancoIconHtml(c.nome,28);return `<div class="cat-chip ${tipoSel===String(c.id)?'sel':''}" data-pay="${c.id}" onclick="App._selPay(this,${c.id})">
+            ${cartoesParaPicker(edit?.cartaoId).map(c=>{const icon=getBancoIconHtml(c.nome,28);return `<div class="cat-chip ${tipoSel===String(c.id)?'sel':''}" data-pay="${c.id}" onclick="App._selPay(this,${c.id})">
               <div class="cat-emoji" style="height:32px;display:flex;align-items:center;justify-content:center">${icon||`<span style="display:inline-block;width:26px;height:26px;border-radius:6px;background:${c.cor}33;display:flex;align-items:center;justify-content:center;font-size:14px">💳</span>`}</div>
               <div class="cat-name">${c.nome}</div></div>`;}).join('')}
           </div></div>
@@ -1199,7 +1211,7 @@ const App = (() => {
       },50);
     }
     else if (tipo==='credito') {
-      const cartaoSel=edit?.cartaoId||state.cartoes[0]?.id;
+      const cartaoSel=edit?.cartaoId||cartoesAtivos()[0]?.id;
       el.innerHTML=`
         <div class="field"><div class="field-label">Valor total</div>
           <div class="valor-wrap"><span class="valor-prefix">R$</span>
@@ -1218,7 +1230,7 @@ const App = (() => {
         <div id="parcelas-preview" style="display:none"></div>
         <div class="field"><div class="field-label">Cartão</div>
           <div class="cat-grid" id="cartao-grid">
-            ${state.cartoes.map(c=>{const icon=getBancoIconHtml(c.nome,28);return `<div class="cat-chip ${c.id===cartaoSel?'sel':''}" data-cartao="${c.id}" onclick="App._selCartao(this,${c.id})">
+            ${cartoesParaPicker(edit?.cartaoId).map(c=>{const icon=getBancoIconHtml(c.nome,28);return `<div class="cat-chip ${c.id===cartaoSel?'sel':''}" data-cartao="${c.id}" onclick="App._selCartao(this,${c.id})">
               <div class="cat-emoji" style="height:32px;display:flex;align-items:center;justify-content:center">${icon||`<span style="display:inline-block;width:26px;height:26px;border-radius:6px;background:${c.cor}33;display:flex;align-items:center;justify-content:center;font-size:14px">💳</span>`}</div>
               <div class="cat-name">${c.nome}</div></div>`;}).join('')}
           </div></div>
@@ -1285,7 +1297,7 @@ const App = (() => {
     if(val<=0){prevEl.style.display='none';return;}
     prevEl.style.display='';
     const cartaoEl=document.querySelector('#cartao-grid .cat-chip.sel');
-    const cartaoId=cartaoEl?parseInt(cartaoEl.dataset.cartao):state.cartoes[0]?.id;
+    const cartaoId=cartaoEl?parseInt(cartaoEl.dataset.cartao):cartoesAtivos()[0]?.id;
     const cartao=getCartaoById(cartaoId);
     const fechamento=cartao?.fechamento||5;
     const vencimento=cartao?.vencimento||10;
@@ -1385,7 +1397,7 @@ const App = (() => {
     else if(tipo==='credito'){
       const n=parseInt(document.getElementById('f-parcelas')?.value||'1');
       const cartaoEl=document.querySelector('#cartao-grid .cat-chip.sel');
-      const cartaoId=cartaoEl?parseInt(cartaoEl.dataset.cartao):state.cartoes[0]?.id;
+      const cartaoId=cartaoEl?parseInt(cartaoEl.dataset.cartao):cartoesAtivos()[0]?.id;
       const cartao=getCartaoById(cartaoId);
       const dataCompra=data||todayStr();
       const dCompra=new Date(dataCompra+'T12:00:00');
@@ -1706,7 +1718,7 @@ const App = (() => {
     allLancs.filter(l => l.autoFatura && l.faturaCartaoId && l.pago && l.mesAno)
             .forEach(l => _faturasPagas.add(l.faturaCartaoId + '|' + l.mesAno));
 
-    const rows = await Promise.all(state.cartoes.map(async c => {
+    const rows = await Promise.all(cartoesAtivos().map(async c => {
       // Fatura ATUAL pela regra oficial
       const { mesAnoV: mesAnoFatAtual } = faturaAtual(c);
 
@@ -2848,7 +2860,7 @@ const App = (() => {
   }
 
   async function renderCfgCartoes(el){
-    el.innerHTML=state.cartoes.map(c=>{
+    el.innerHTML=cartoesAtivos().map(c=>{
       return `<div class="cartao-cfg-card">
         <div class="cartao-cfg-header">
           ${getBancoIconHtml(c.nome,36)||`<div class="cartao-cfg-band" style="background:${c.cor}"></div>`}
@@ -2929,9 +2941,53 @@ const App = (() => {
   }
   function _openAddCartao(){openModal('add-cartao',{});}
   function _editCartao(id){openModal('edit-cartao',getCartaoById(id));}
-  async function _deleteCartao(id){
-    if(!confirm('Excluir este cartão?')) return;
-    await DB.deleteCartao(id);state.cartoes=await DB.getCartoes();renderPerfil();toast('Cartão excluído','info');
+  function _deleteCartao(id){
+    const c=getCartaoById(id);if(!c) return;
+    openModal('confirm-delete-cartao',{id,nome:c.nome});
+  }
+
+  // Para de gerar novas instâncias futuras de gastos fixos vinculados a este cartão
+  // (independente da escolha — um cartão excluído não pode continuar recebendo NOVAS cobranças)
+  async function _pararRecorrenciaFixoCartao(cartaoId){
+    const templates=await DB.getFixosTemplates();
+    for(const t of templates.filter(t=>t.cartaoId===cartaoId)){
+      await DB.deleteFixoTemplate(t.id);
+      await DB.clearFixosDeletadosByTemplate(t.id);
+    }
+  }
+
+  // Remove parcelas de crédito e gastos fixos deste cartão que ainda não foram pagos
+  // (mantém intacto tudo que já é histórico/pago)
+  async function _removerFaturasFuturasCartao(cartao){
+    const allLancs=await DB.getAllLancamentos();
+    // Monta set de faturas já pagas (mesmo critério usado em renderLimiteCartoes/renderParcelamentos)
+    _faturasPagas=new Set();
+    allLancs.filter(l=>l.autoFatura&&l.faturaCartaoId&&l.pago&&l.mesAno)
+            .forEach(l=>_faturasPagas.add(l.faturaCartaoId+'|'+l.mesAno));
+    for(const l of allLancs){
+      if(l.cartaoId!==cartao.id) continue;
+      if(l.tipo==='credito'){
+        const mesRef=l.mesPagamento||l.mesAno;
+        if(!isParcelaPaga(mesRef,cartao)) await DB.deleteLancamento(l.id);
+      } else if(l.tipo==='fixo'&&!l.autoFatura){
+        if(!l.pago) await DB.deleteLancamento(l.id);
+      }
+    }
+  }
+
+  async function _confirmarExcluirCartao(id,manterFuturo){
+    const cartao=getCartaoById(id);if(!cartao) return;
+    await _pararRecorrenciaFixoCartao(id);
+    if(!manterFuturo) await _removerFaturasFuturasCartao(cartao);
+    cartao.excluido=true;
+    cartao.excluidoEm=Date.now();
+    await DB.saveCartao(cartao);
+    state.cartoes=await DB.getCartoes();
+    await atualizarFaturaFixa(id);
+    state.lancamentos=await DB.getLancamentos(mesAnoStr(state.currentMonth,state.currentYear));
+    closeModal();
+    renderPerfil();
+    toast(manterFuturo?'Cartão excluído — próximas faturas mantidas':'Cartão excluído — faturas futuras removidas','info');
   }
 
 
@@ -3090,6 +3146,15 @@ const App = (() => {
         <div class="modal-btns" style="flex-direction:column">
           <button class="btn-save" style="background:var(--red);margin-bottom:8px" onclick="App._deletarTodasParcelas(${data.grupoId})">Excluir todas as ${data.totalParcelas} parcelas</button>
           <button class="btn-cancel" style="margin-bottom:8px" onclick="App._deletarUmaParcela(${data.id})">Só esta parcela</button>
+          <button class="btn-cancel" onclick="App.closeModal()">Cancelar</button>
+        </div>`;
+    }
+    else if(type==='confirm-delete-cartao'){
+      content.innerHTML=`<div class="modal-title">Excluir ${data.nome}</div>
+        <p style="font-size:14px;color:var(--text2);line-height:1.6;margin-bottom:20px">Deseja manter o pagamento das próximas faturas deste cartão?</p>
+        <div class="modal-btns" style="flex-direction:column">
+          <button class="btn-save" style="margin-bottom:8px" onclick="App._confirmarExcluirCartao(${data.id},true)">Sim, manter o que falta pagar</button>
+          <button class="btn-cancel" style="margin-bottom:8px;background:var(--red-dim);color:var(--red)" onclick="App._confirmarExcluirCartao(${data.id},false)">Não, remover faturas futuras</button>
           <button class="btn-cancel" onclick="App.closeModal()">Cancelar</button>
         </div>`;
     }
@@ -4063,7 +4128,7 @@ const App = (() => {
     _analiseAbrirCategoria,_analiseToggleCat,
     setCfgTab,_toggleCatRow,
     _openAddCat,_openEditCat,_deleteCategoria,_openAddSubcat,_openEditSubcat,_deleteSubcat,
-    _openAddCartao,_editCartao,_deleteCartao,_updateCartao,
+    _openAddCartao,_editCartao,_deleteCartao,_confirmarExcluirCartao,_updateCartao,
     _openAddVavr,_editVavr,_deleteVavr,_updateVavr,_saveVavr,_previewVavrIcon,_selVavr,_abrirVavrNaAba,
     _toggleCartaoExpandido,_abrirCartaoNaAba,_setCartaoBSPeriodo,_setCartaoBSFatura,
     _exportar,_importar,_limpar,_setTema,
