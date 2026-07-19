@@ -3769,7 +3769,7 @@ const App = (() => {
       const proxima = parcelas.find(p => !isEffetivamentePaga(p));
 
       const ultima = parcelas[parcelas.length - 1];
-      const [ulMm, ulYy] = ultima.mesAno.split('-').map(Number);
+      const [ulMm, ulYy] = (ultima.mesPagamento || ultima.mesAno).split('-').map(Number);
 
       return {
         grupoId: primeira.grupoId,
