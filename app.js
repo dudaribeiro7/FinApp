@@ -23,6 +23,8 @@ const App = (() => {
     parcCatFilter: [],
     parcImpactoVisible: true,
     parcAbertos: new Set(),
+    parcSortCampo: 'data', // 'data' | 'valor'
+    parcSortDir: 'desc', // 'asc' | 'desc'
     cartaoExpandidoId: null,
     lancamentos: [],
     categorias: [],
@@ -3781,6 +3783,7 @@ const App = (() => {
         concluida: restantes === 0,
         cartaoId: primeira.cartaoId,
         categoriaId: primeira.categoriaId,
+        dataCompra: primeira.dataCompra || primeira.data || '',
       };
     });
 
@@ -3798,6 +3801,18 @@ const App = (() => {
         if (!hasCat && !hasSub) return false;
       }
       return true;
+    });
+
+    // ── Ordenação ─────────────────────────
+    const sortCampo = state.parcSortCampo;
+    const sortDir = state.parcSortDir;
+    comprasFiltradas.sort((a, b) => {
+      let av, bv;
+      if (sortCampo === 'valor') { av = a.totalCompra; bv = b.totalCompra; }
+      else { av = a.dataCompra || ''; bv = b.dataCompra || ''; }
+      if (av < bv) return sortDir === 'asc' ? -1 : 1;
+      if (av > bv) return sortDir === 'asc' ? 1 : -1;
+      return 0;
     });
 
     const abertas = comprasFiltradas.filter(c => !c.concluida);
@@ -3968,7 +3983,14 @@ const App = (() => {
       </div>
       <div class="divider-line" style="margin:0 0 12px"></div>
       <div style="padding:0 16px">
-        <div class="section-label" style="margin-bottom:10px" id="parc-lista-label">Compras em aberto (${abertas.length})</div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:8px;flex-wrap:wrap">
+          <div class="section-label" style="margin-bottom:0" id="parc-lista-label">Compras em aberto (${abertas.length})</div>
+          <div style="display:flex;align-items:center;gap:4px">
+            <span onclick="App._parcSetSortCampo('data')" style="font-size:11px;padding:4px 9px;border-radius:8px;cursor:pointer;font-weight:600;color:${sortCampo==='data'?'var(--accent)':'var(--text3)'};background:${sortCampo==='data'?'var(--accent)18':'transparent'}">Data</span>
+            <span onclick="App._parcSetSortCampo('valor')" style="font-size:11px;padding:4px 9px;border-radius:8px;cursor:pointer;font-weight:600;color:${sortCampo==='valor'?'var(--accent)':'var(--text3)'};background:${sortCampo==='valor'?'var(--accent)18':'transparent'}">Valor</span>
+            <span onclick="App._parcToggleSortDir()" style="font-size:13px;padding:4px 8px;cursor:pointer;color:var(--accent2)" title="${sortDir==='asc'?'Crescente':'Decrescente'}">${sortDir==='asc'?'↑':'↓'}</span>
+          </div>
+        </div>
         <div id="parc-lista">${listaHtml}</div>
       </div>
       <div style="height:20px"></div>`;
@@ -4066,6 +4088,8 @@ const App = (() => {
     _reRenderParc();
   }
   function _parcToggleImpacto() { state.parcImpactoVisible = !state.parcImpactoVisible; _reRenderParc(); }
+  function _parcSetSortCampo(campo) { state.parcSortCampo = campo; _reRenderParc(); }
+  function _parcToggleSortDir() { state.parcSortDir = state.parcSortDir === 'asc' ? 'desc' : 'asc'; _reRenderParc(); }
 
   async function _confirmarAntecipar(grupoId) {
     const qtdEl = document.getElementById('ant-qtd');
@@ -4148,7 +4172,7 @@ const App = (() => {
   return {
     gotoScreen,goBack,novoLancamento,changeMonth,
     renderHome,renderLancamentos,renderRelatorios,renderPerfil,
-    renderParcelamentos,_parcFiltroCartao,_abrirFiltroCatParc,_toggleFiltCatParc,_limparFiltCatParc,_parcToggleItem,_parcToggleImpacto,
+    renderParcelamentos,_parcFiltroCartao,_abrirFiltroCatParc,_toggleFiltCatParc,_limparFiltCatParc,_parcToggleItem,_parcToggleImpacto,_parcSetSortCampo,_parcToggleSortDir,
     _abrirAntecipar,_antPreview,_confirmarAntecipar,
     setLancTab,setLancSubTab,irParaLancamentos,editLancamento,toggleFixoPago,
     abrirCartao,abrirFiltroCategoria,_toggleFiltroItem,limparFiltroCategoria,
