@@ -3808,7 +3808,7 @@ const App = (() => {
     const sortDir = state.parcSortDir;
     comprasFiltradas.sort((a, b) => {
       let av, bv;
-      if (sortCampo === 'valor') { av = a.totalCompra; bv = b.totalCompra; }
+      if (sortCampo === 'valor') { av = a.valorParcela; bv = b.valorParcela; }
       else { av = a.dataCompra || ''; bv = b.dataCompra || ''; }
       if (av < bv) return sortDir === 'asc' ? -1 : 1;
       if (av > bv) return sortDir === 'asc' ? 1 : -1;
