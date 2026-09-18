@@ -4096,10 +4096,8 @@ const App = (() => {
     const descEl = document.getElementById('ant-desconto');
     if (!qtdEl) return;
     const qtd = parseInt(qtdEl.value) || 1;
-    const valorParcela = parseFloat(qtdEl.dataset.valor || '0');
     const descStr = (descEl?.value||'').replace(/\./g,'').replace(',','.');
     const desc = parseFloat(descStr) || 0;
-    const totalFinal = Math.max(valorParcela * qtd - desc, 0);
 
     const all = await DB.getAllLancamentos();
     const parcelas = all.filter(l => l.grupoId === grupoId && l.tipo === 'credito');
@@ -4115,52 +4113,44 @@ const App = (() => {
 
     // Parcelas a antecipar (as primeiras `qtd` pendentes)
     const aAntecipar = pendentes.slice(0, qtd);
-    const restantes = pendentes.slice(qtd);
 
-    // 1. Excluir as parcelas antecipadas
+    // 1. Mover as parcelas antecipadas pra fatura atual, MANTENDO seu número
+    //    original (ex: 5/6, 6/6) e o grupoId — assim elas continuam aparecendo
+    //    no Relatório de Parcelas como pagas, em vez de sumir do grupo.
     for (const p of aAntecipar) {
-      await DB.deleteLancamento(p.id);
+      await DB.updateLancamento({
+        ...p,
+        mesPagamento: mesAtualKey,
+      });
     }
 
-    // 2. Se há parcelas restantes, renumerar para manter consistência
-    if (restantes.length > 0) {
-      // Recalcular totalParcelas e parcela para as restantes
-      const totalOriginal = ref.totalParcelas || parcelas.length;
-      const novoTotal = totalOriginal - qtd;
-      for (let i = 0; i < restantes.length; i++) {
-        const p = restantes[i];
-        await DB.updateLancamento({
-          ...p,
-          parcela: (p.parcela || (i+1+aAntecipar.length)) - qtd,
-          totalParcelas: novoTotal,
-        });
-      }
+    // 2. Se houve desconto, lança um ajuste avulso (negativo) na fatura atual
+    //    em vez de recalcular o valorParcela de cada parcela — assim o valor
+    //    de cada parcela no Relatório continua batendo com o original.
+    if (desc > 0) {
+      const descricaoDesc = ref.descricao
+        ? `Desconto antecipação - ${ref.descricao}`
+        : 'Desconto antecipação';
+      await DB.addLancamento({
+        tipo: 'credito',
+        descricao: descricaoDesc,
+        categoriaId: ref.categoriaId,
+        subcat: ref.subcat || null,
+        cartaoId: ref.cartaoId,
+        valorParcela: -desc,
+        valorTotal: -desc,
+        parcela: 1,
+        totalParcelas: 1,
+        mesAno: ref.mesAno,
+        mesPagamento: mesAtualKey,
+        dataCompra: ref.dataCompra || ref.data,
+        data: ref.dataCompra || ref.data,
+        grupoId: null, // lançamento avulso (não faz parte do grupo de parcelas)
+        criadoEm: Date.now(),
+      });
     }
 
-    // 3. Criar lançamento único na fatura atual com o valor total antecipado
-    const descricaoAnt = ref.descricao
-      ? `${ref.descricao} (antecipação ${qtd}x)`
-      : `Antecipação ${qtd}x`;
-    const novoLanc = {
-      tipo: 'credito',
-      descricao: descricaoAnt,
-      categoriaId: ref.categoriaId,
-      subcat: ref.subcat || null,
-      cartaoId: ref.cartaoId,
-      valorParcela: totalFinal,
-      valorTotal: totalFinal,
-      parcela: 1,
-      totalParcelas: 1,
-      mesAno: ref.mesAno, // mês da compra original
-      mesPagamento: mesAtualKey, // cobrado na fatura atual
-      dataCompra: ref.dataCompra || ref.data,
-      data: ref.dataCompra || ref.data,
-      grupoId: null, // lançamento avulso (não faz parte de grupo)
-      criadoEm: Date.now(),
-    };
-    await DB.addLancamento(novoLanc);
-
-    // 4. Atualizar fatura automática do cartão
+    // 3. Atualizar fatura automática do cartão
     if (ref.cartaoId) await atualizarFaturaFixa(ref.cartaoId);
 
     closeModal();
