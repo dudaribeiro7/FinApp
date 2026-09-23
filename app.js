@@ -3761,7 +3761,7 @@ const App = (() => {
       const totalCompra = primeira.valorTotal || (valorParcela * n);
 
       const isEffetivamentePaga = (p) =>
-        isParcelaPaga(p.mesPagamento || p.mesAno, cartao);
+        p.antecipada === true || isParcelaPaga(p.mesPagamento || p.mesAno, cartao);
 
       const pagas = parcelas.filter(p => isEffetivamentePaga(p)).length;
       const restantes = n - pagas;
@@ -3910,7 +3910,7 @@ const App = (() => {
 
       const detalheRows = c.parcelas.map(p => {
         const key = p.mesPagamento || p.mesAno;
-        const pago = isParcelaPaga(key, c.cartao);
+        const pago = p.antecipada === true || isParcelaPaga(key, c.cartao);
         const proxKey = c.proxima ? (c.proxima.mesPagamento || c.proxima.mesAno) : null;
         const isProx = !pago && key === proxKey;
         const [mmStr2, yyStr2] = key.split('-').map(Number);
@@ -4116,11 +4116,15 @@ const App = (() => {
 
     // 1. Mover as parcelas antecipadas pra fatura atual, MANTENDO seu número
     //    original (ex: 5/6, 6/6) e o grupoId — assim elas continuam aparecendo
-    //    no Relatório de Parcelas como pagas, em vez de sumir do grupo.
+    //    no Relatório de Parcelas. `antecipada: true` marca que já foram pagas
+    //    por antecipação, independente do vencimento da fatura atual já ter
+    //    passado ou não (isParcelaPaga não cobre esse caso e não pode ser
+    //    alterada — ver REGRA CRÍTICA).
     for (const p of aAntecipar) {
       await DB.updateLancamento({
         ...p,
         mesPagamento: mesAtualKey,
+        antecipada: true,
       });
     }
 
