@@ -3220,7 +3220,7 @@ const App = (() => {
         const parcelas = all.filter(l => l.grupoId === data.grupoId && l.tipo === 'credito');
         parcelas.sort((a,b)=>(a.parcela||0)-(b.parcela||0));
         const cartao = getCartaoById(parcelas[0]?.cartaoId);
-        const pendentes = parcelas.filter(p => !isParcelaPaga(p.mesPagamento||p.mesAno, cartao));
+        const pendentes = parcelas.filter(p => p.antecipada !== true && !isParcelaPaga(p.mesPagamento||p.mesAno, cartao));
         const n = pendentes.length;
         if(n === 0){ toast('Todas as parcelas já estão pagas','info'); closeModal(); return; }
         const valorParcela = pendentes[0].valorParcela || 0;
@@ -3764,7 +3764,8 @@ const App = (() => {
         p.antecipada === true || isParcelaPaga(p.mesPagamento || p.mesAno, cartao);
 
       const pagas = parcelas.filter(p => isEffetivamentePaga(p)).length;
-      const restantes = n - pagas;
+      // Usa os registros que realmente existem (antecipações antigas podem ter removido parcelas)
+      const restantes = Math.max(0, Math.min(n, parcelas.length) - pagas);
       const totalPago = pagas * valorParcela;
       const totalFalta = restantes * valorParcela;
 
@@ -3815,11 +3816,12 @@ const App = (() => {
       return 0;
     });
 
+    // Só parcelamentos ainda ativos aparecem nesta tela
     const abertas = comprasFiltradas.filter(c => !c.concluida);
-    const concluidas = comprasFiltradas.filter(c => c.concluida);
+    const concluidas = [];
 
     // ── Chips cartão ─────────────────────
-    const cartoesComParc = [...new Set(compras.map(c=>c.cartaoId))]
+    const cartoesComParc = [...new Set(compras.filter(c=>!c.concluida).map(c=>c.cartaoId))]
       .map(id => state.cartoes.find(c=>c.id===id)).filter(Boolean);
     const chipsCartaoHtml = [
       `<div class="parc-chip-filtro ${!filtCartao?'ativo':''}" onclick="App._parcFiltroCartao(null)">Todos</div>`,
@@ -4103,7 +4105,7 @@ const App = (() => {
     const parcelas = all.filter(l => l.grupoId === grupoId && l.tipo === 'credito');
     parcelas.sort((a,b)=>(a.parcela||0)-(b.parcela||0));
     const cartao = getCartaoById(parcelas[0]?.cartaoId);
-    const pendentes = parcelas.filter(p => !isParcelaPaga(p.mesPagamento||p.mesAno, cartao));
+    const pendentes = parcelas.filter(p => p.antecipada !== true && !isParcelaPaga(p.mesPagamento||p.mesAno, cartao));
 
     if (qtd > pendentes.length) { toast('Número de parcelas inválido','err'); return; }
 
