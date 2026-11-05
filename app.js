@@ -3366,11 +3366,29 @@ const App = (() => {
     const hoje = new Date();
     const mesAtualKey = mesAnoStr(hoje.getMonth(), hoje.getFullYear());
 
-    // Coletar todos os mesAno de faturas que têm parcelas deste cartão
-    const mesesFatura = [...new Set(
-      allLancs.filter(l => !l.autoFatura && l.tipo === 'credito' && l.cartaoId === cartaoId)
-              .map(l => l.mesPagamento || l.mesAno)
-    )];
+    // Fatura (mesAno do vencimento) em que um gasto fixo no crédito cai.
+    // Fixos gerados automaticamente (ensureFixosMes) não têm mesPagamento, então
+    // derivamos da data prevista/efetiva pela regra oficial da fatura.
+    const mesFaturaFixo = (l) => {
+      if (l.mesPagamento) return l.mesPagamento;
+      const ref = l.dataPagamento || l.data;
+      if (ref) {
+        const { mesAnoV } = faturaDeData(new Date(ref + 'T12:00:00'), cartao);
+        if (mesAnoV) return mesAnoV;
+      }
+      return l.mesAno;
+    };
+    // Fixos do cartão (pagos OU previstos): a fatura prevista deve incluí-los
+    const fixosCartao = allLancs.filter(l =>
+      l.tipo === 'fixo' && !l.autoFatura && l.cartaoId === cartaoId
+    );
+
+    // Coletar todos os mesAno de faturas que têm parcelas ou fixos deste cartão
+    const mesesFatura = [...new Set([
+      ...allLancs.filter(l => !l.autoFatura && l.tipo === 'credito' && l.cartaoId === cartaoId)
+                 .map(l => l.mesPagamento || l.mesAno),
+      ...fixosCartao.map(mesFaturaFixo),
+    ])];
     // Garantir que a fatura atual também é processada (mesmo sem créditos)
     // Fatura ATUAL pela regra oficial
     const { mesAnoV: mesAnoFatAtual } = faturaAtual(cartao);
@@ -3387,10 +3405,9 @@ const App = (() => {
         l.cartaoId === cartaoId && (l.mesPagamento || l.mesAno) === mesAnoFat
       );
       let totalFatura = parcelasFatura.reduce((s, l) => s + (l.valorParcela || 0), 0);
-      // Inclui fixos do cartão pagos nesta fatura
-      allLancs.filter(l => l.tipo === 'fixo' && !l.autoFatura && l.cartaoId === cartaoId &&
-                            (l.mesPagamento || l.mesAno) === mesAnoFat && l.pago)
-              .forEach(l => { totalFatura += (l.valor || 0); });
+      // Inclui fixos do cartão desta fatura — pagos E previstos
+      fixosCartao.filter(l => mesFaturaFixo(l) === mesAnoFat)
+                 .forEach(l => { totalFatura += (l.valor || 0); });
 
       // Data de vencimento desta fatura: diaV no mês do mesAnoFat
       const [mmFat, yyFat] = mesAnoFat.split('-').map(Number);
