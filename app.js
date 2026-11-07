@@ -2188,7 +2188,7 @@ const App = (() => {
           <span class="resumo-label" style="font-size:12px;color:var(--text3)">↳ Balanço efetuado</span>
           <span class="resumo-val" style="font-size:13px;color:${balancoEfet>=0?'var(--green)':'var(--red)'}">${balancoEfet>=0?'':'-'}${fmtMoney(Math.abs(balancoEfet))}</span>
         </div>
-        <div style="font-size:11px;color:var(--text3);margin-top:8px;text-align:center">${itens.length} ${f.mostrarParcelas?'lançamento'+(itens.length===1?'':'s'):'item'+(itens.length===1?'':'ns')} no filtro</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:8px;text-align:center">${itensTodos.length} ${f.mostrarParcelas?'lançamento'+(itensTodos.length===1?'':'s'):'item'+(itensTodos.length===1?'':'ns')} no filtro</div>
       </div>
 
       <!-- Por categoria -->
@@ -2236,12 +2236,12 @@ const App = (() => {
       <!-- Lista de lançamentos (recolhível) -->
       <div class="card" style="padding:18px">
         <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="App._analiseToggleLista()">
-          <div class="section-label" style="padding:0;margin:0">Lançamentos (${itens.length})</div>
+          <div class="section-label" style="padding:0;margin:0">Lançamentos (${itensTodos.length})</div>
           <span style="font-size:12px;color:var(--accent2)">${state.analiseListaAberta?'Ocultar ▲':'Ver lançamentos ▼'}</span>
         </div>
         ${state.analiseListaAberta ? `<div style="margin-top:12px">${
-          itens.length===0 ? `<div style="text-align:center;color:var(--text3);font-size:13px;padding:14px 0">Nenhum lançamento</div>` :
-          [...itens].sort((a,b)=>{
+          itensTodos.length===0 ? `<div style="text-align:center;color:var(--text3);font-size:13px;padding:14px 0">Nenhum lançamento</div>` :
+          [...itensTodos].sort((a,b)=>{
             const da = a.data||'', db = b.data||'';
             return db.localeCompare(da);
           }).map(it => {
@@ -2273,7 +2273,8 @@ const App = (() => {
               parcInfo = it.ehCompraCheia ? ` · ${it.totalParcelas||l.totalParcelas}x` : ` · ${l.parcela}/${l.totalParcelas}`;
             }
             const cartaoInfo = l.cartaoId ? ` · ${getCartaoById(l.cartaoId)?.nome||''}` : '';
-            const tipoTag = l.tipo==='entrada'?'Entrada':l.tipo==='debito'?'Débito':l.tipo==='credito'?'Crédito':'Fixo';
+            const tipoTag = it.soDebito ? 'Débito · venc. fatura'
+              : l.tipo==='entrada'?'Entrada':l.tipo==='debito'?'Débito':l.tipo==='credito'?'Crédito':'Fixo';
             const statusBadge = it.status==='efetuado'
               ? `<span style="font-size:9px;padding:2px 5px;background:var(--green-dim);color:var(--green);border-radius:4px;font-weight:500">EFET.</span>`
               : `<span style="font-size:9px;padding:2px 5px;background:var(--bg4);color:var(--text3);border-radius:4px;font-weight:500">PREV.</span>`;
