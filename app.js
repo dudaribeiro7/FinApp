@@ -2008,7 +2008,9 @@ const App = (() => {
 
     const ent = somar(it => it.l.tipo === 'entrada');
     const deb = somar(it => it.l.tipo === 'debito' || (it.l.tipo === 'fixo' && it.l.pagamento === 'debito' && !it.l.cartaoId));
-    const cred = somar(it => it.l.tipo === 'credito' || (it.l.tipo === 'fixo' && it.l.pagamento === 'credito'));
+    // Fixos no cartão (cartaoId) são crédito, mesmo com pagamento = id do cartão.
+    // Status vem de _statusLanc: pago = efetuado; não pago = previsto (igual aos fixos no débito).
+    const cred = somar(it => it.l.tipo === 'credito' || (it.l.tipo === 'fixo' && !!it.l.cartaoId));
 
     const totalSaidas = deb.total + cred.total;
     const balanco = ent.total - totalSaidas + saldoInicialPeriodo;
