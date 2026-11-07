@@ -1871,6 +1871,10 @@ const App = (() => {
       // Ignorar fatura_cartao automática (é só agregador)
       if (l.tipo === 'fatura_cartao') return false;
 
+      // Fixo no cartão só conta se já foi pago (efetuado) ou se a data é futura (previsto).
+      // Não pago com data já passada fica fora.
+      if (l.tipo === 'fixo' && l.cartaoId && !l.autoFatura && !l.pago && !(dataRef && dataRef > todayStr())) return false;
+
       // Data
       if (f.dataInicio && (!dataRef || dataRef < f.dataInicio)) return false;
       if (f.dataFim && (!dataRef || dataRef > f.dataFim)) return false;
@@ -2007,7 +2011,10 @@ const App = (() => {
     };
 
     const ent = somar(it => it.l.tipo === 'entrada');
-    const deb = somar(it => it.l.tipo === 'debito' || (it.l.tipo === 'fixo' && it.l.pagamento === 'debito' && !it.l.cartaoId));
+    // Fixo no cartão ainda previsto também sai no débito (será pago junto com a fatura).
+    // Os já pagos não entram aqui: o valor deles já está no lançamento de pagamento da fatura.
+    const deb = somar(it => it.l.tipo === 'debito' || (it.l.tipo === 'fixo' && it.l.pagamento === 'debito' && !it.l.cartaoId) ||
+                            (it.l.tipo === 'fixo' && !!it.l.cartaoId && !it.l.autoFatura && it.status === 'previsto'));
     // Fixos no cartão (cartaoId) são crédito, mesmo com pagamento = id do cartão.
     // Status vem de _statusLanc: pago = efetuado; não pago = previsto (igual aos fixos no débito).
     const cred = somar(it => it.l.tipo === 'credito' || (it.l.tipo === 'fixo' && !!it.l.cartaoId));
