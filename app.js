@@ -652,7 +652,7 @@ const App = (() => {
       <div class="fixo-pago-toggle ${pago?'pago':''}" onclick="event.stopPropagation();App.toggleFixoPago(${l.id})" title="${pago?'Não pago':'Marcar como pago'}">
         ${pago?'<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>':'<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/></svg>'}
       </div>` : '';
-    return `<div class="feed-item fatura-auto" onclick="void(0)" style="cursor:default;opacity:${pago?'0.55':'1'}">
+    return `<div class="feed-item fatura-auto" onclick="App._abrirCartaoNaAba(${l.faturaCartaoId},'${l.mesAno}')" style="cursor:pointer;opacity:${pago?'0.55':'1'}">
       ${pagoToggle}
       <div class="feed-icon" style="background:#88889918;overflow:hidden;padding:0">
         ${iconHtml}
@@ -1724,7 +1724,14 @@ const App = (() => {
     allLancs.filter(l => l.autoFatura && l.faturaCartaoId && l.pago && l.mesAno)
             .forEach(l => _faturasPagas.add(l.faturaCartaoId + '|' + l.mesAno));
 
-    const rows = await Promise.all(cartoesAtivos().map(async c => {
+    // Cartões excluídos continuam aqui (histórico de faturas) enquanto tiverem ao menos um lançamento
+    const cartoesComLanc = _idsCartoesComLancamento(allLancs);
+    const cartoesLista = [
+      ...cartoesAtivos(),
+      ...state.cartoes.filter(c => c.excluido && cartoesComLanc.has(c.id)),
+    ];
+
+    const rows = await Promise.all(cartoesLista.map(async c => {
       // Fatura ATUAL pela regra oficial
       const { mesAnoV: mesAnoFatAtual } = faturaAtual(c);
 
@@ -1744,7 +1751,7 @@ const App = (() => {
         <div style="padding:14px;cursor:pointer;transition:opacity 0.15s" onclick="App._toggleCartaoExpandido(${c.id})" ontouchstart="this.style.opacity='0.7'" ontouchend="this.style.opacity='1'">
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
             ${iconHtml || `<div style="width:28px;height:28px;border-radius:7px;background:${c.cor}22;display:flex;align-items:center;justify-content:center;font-size:13px">💳</div>`}
-            <span style="font-size:15px;font-weight:600;color:${c.cor}">${c.nome}</span>
+            <span style="font-size:15px;font-weight:600;color:${c.cor}">${c.nome}${c.excluido?' <span style="font-size:10px;font-weight:500;padding:1px 6px;border-radius:4px;background:#88889922;color:#888899;vertical-align:middle">excluído</span>':''}</span>
             <span style="margin-left:auto;font-size:13px;font-family:'DM Mono',monospace;color:var(--text2)">${fmtMoney(totalComprometido)} <span style="color:var(--text3)">/ ${fmtMoney(c.limite||0)}</span></span>
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="var(--text3)" stroke-width="2" style="transition:transform 0.2s;${chevronRot}"><polyline points="9 18 15 12 9 6"/></svg>
           </div>
@@ -2514,11 +2521,20 @@ const App = (() => {
     }
   }
 
-  // Abre direto um cartão específico (vindo da home). Não-toggle: força abrir.
-  async function _abrirCartaoNaAba(cartaoId) {
+  // Abre direto um cartão específico (vindo da home ou do lançamento automático de fatura).
+  // Não-toggle: força abrir. Com mesAnoFat, já abre o discriminativo dessa fatura (MM-YYYY do vencimento).
+  async function _abrirCartaoNaAba(cartaoId, mesAnoFat = null) {
     state.cartaoExpandidoId = cartaoId;
-    _cartaoBSFaturaSel = null;
+    _cartaoBSFaturaSel = mesAnoFat;
     _cartaoBSPeriodo = 6;
+    // Fatura antiga fora da janela de 6 meses do gráfico: amplia a janela para a barra aparecer
+    const cartaoRef = getCartaoById(cartaoId);
+    if (mesAnoFat && cartaoRef) {
+      const [mmA, yyA] = faturaAtual(cartaoRef).mesAnoV.split('-').map(Number);
+      const [mmF, yyF] = mesAnoFat.split('-').map(Number);
+      const mesesAtras = (yyA - yyF) * 12 + (mmA - mmF);
+      if (mesesAtras >= 6) _cartaoBSPeriodo = 12;
+    }
     // Atualiza state + classes + esconde nav de mês (setRelTab faz tudo isso)
     setRelTab('cartoes');
     // Navega pra tela de relatórios (vai re-renderizar, mas state.cartaoExpandidoId já está setado)
@@ -3041,10 +3057,44 @@ const App = (() => {
     await DB.saveCartao(cartao);
     state.cartoes=await DB.getCartoes();
     await atualizarFaturaFixa(id);
+    // Sem nenhum lançamento restante, o cartão excluído some de vez (não há histórico a preservar)
+    const removidos=await _purgarCartoesExcluidosSemLancamento();
     state.lancamentos=await DB.getLancamentos(mesAnoStr(state.currentMonth,state.currentYear));
     closeModal();
     renderPerfil();
-    toast(manterFuturo?'Cartão excluído — próximas faturas mantidas':'Cartão excluído — faturas futuras removidas','info');
+    if(removidos.includes(id)) toast('Cartão excluído','info');
+    else toast(manterFuturo?'Cartão excluído — próximas faturas mantidas':'Cartão excluído — faturas futuras removidas','info');
+  }
+
+  // Ids de cartões que têm ao menos um lançamento: compra/fixo no cartão (cartaoId)
+  // ou pagamento automático de fatura (faturaCartaoId)
+  function _idsCartoesComLancamento(allLancs) {
+    const ids = new Set();
+    for (const l of allLancs) {
+      if (l.cartaoId) ids.add(l.cartaoId);
+      if (l.faturaCartaoId) ids.add(l.faturaCartaoId);
+    }
+    return ids;
+  }
+
+  // Remove definitivamente cartões já excluídos que não possuem nenhum lançamento.
+  // Cartões excluídos COM lançamentos ficam preservados (histórico em Relatórios > Cartões).
+  async function _purgarCartoesExcluidosSemLancamento() {
+    const excluidos = state.cartoes.filter(c => c.excluido);
+    if (!excluidos.length) return [];
+    const allLancs = await DB.getAllLancamentos();
+    const comLanc = _idsCartoesComLancamento(allLancs);
+    const removidos = [];
+    for (const c of excluidos) {
+      if (comLanc.has(c.id)) continue;
+      await DB.deleteCartao(c.id);
+      removidos.push(c.id);
+    }
+    if (removidos.length) {
+      state.cartoes = await DB.getCartoes();
+      if (removidos.includes(state.cartaoExpandidoId)) state.cartaoExpandidoId = null;
+    }
+    return removidos;
   }
 
 
@@ -3410,6 +3460,11 @@ const App = (() => {
       ...allLancs.filter(l => !l.autoFatura && l.tipo === 'credito' && l.cartaoId === cartaoId)
                  .map(l => l.mesPagamento || l.mesAno),
       ...fixosCartao.map(l => l.mesPagamento || l.mesAno),
+      // Faturas automáticas já existentes também são revisitadas: se as compras/parcelas daquele mês
+      // foram excluídas ou alteradas, o valor (ou a própria fatura, se zerou) precisa ser recalculado.
+      // Sem isso, uma fatura futura "órfã" ficava para sempre com o valor antigo.
+      ...allLancs.filter(l => l.autoFatura && l.faturaCartaoId === cartaoId && l.mesAno)
+                 .map(l => l.mesAno),
     ])];
     // Garantir que a fatura atual também é processada (mesmo sem créditos)
     // Fatura ATUAL pela regra oficial
@@ -3545,6 +3600,28 @@ const App = (() => {
     for (const l of faturas) await DB.deleteLancamento(l.id);
     console.log('[migração] ' + faturas.length + ' faturas automáticas removidas para recriação');
     localStorage.setItem('migr_fatura_auto_limpeza_v1', '1');
+  }
+
+  async function migrarLimpezaDez26() {
+    // Limpeza pontual: apaga todos os lançamentos de 12-2026 em diante (pelo mesAno), exceto os
+    // pagamentos automáticos de fatura. Em seguida o init recalcula essas faturas (atualizarFaturaFixa)
+    // só com o que restou: lançamentos até 11-2026, incluindo as parcelas futuras de compras feitas
+    // até lá (nas parcelas, mesAno = mês da COMPRA e mesPagamento = mês da fatura).
+    // Gastos/entradas fixos de meses futuros voltam sozinhos a partir dos templates.
+    const jaRodou = localStorage.getItem('migr_limpeza_dez26_v1');
+    if (jaRodou) return;
+    const limite = mesAnoNum('12-2026');
+    const allLancs = await DB.getAllLancamentos();
+    const alvo = allLancs.filter(l => !l.autoFatura && l.mesAno && mesAnoNum(l.mesAno) >= limite);
+    // Cópia de segurança do que será removido (best-effort: a cota do localStorage pode estourar)
+    try {
+      if (!localStorage.getItem('backup_limpeza_dez26_v1')) {
+        localStorage.setItem('backup_limpeza_dez26_v1', JSON.stringify(alvo));
+      }
+    } catch (e) { console.warn('[limpeza dez/26] backup não salvo:', e); }
+    for (const l of alvo) await DB.deleteLancamento(l.id);
+    console.log('[limpeza dez/26] ' + alvo.length + ' lançamentos removidos (mantidas as faturas automáticas)');
+    localStorage.setItem('migr_limpeza_dez26_v1', '1');
   }
 
   async function migrarParcelasParaRegraOficial() {
@@ -3720,8 +3797,12 @@ const App = (() => {
     await migrarMesPagamentoV4();
     await migrarFixosPagamentoParaString();
     await migrarFixosCreditoMesPagamento();
+    // Limpeza pontual de dez/26 em diante (as faturas são recalculadas logo abaixo)
+    await migrarLimpezaDez26();
     // Recalcular faturas automáticas para todos os cartões
     for(const c of state.cartoes) await atualizarFaturaFixa(c.id);
+    // Cartões excluídos que ficaram sem nenhum lançamento somem de vez
+    await _purgarCartoesExcluidosSemLancamento();
     await loadData(); // recarregar com as faturas atualizadas
     gotoScreen('screen-home',false);
 
