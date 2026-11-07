@@ -1894,7 +1894,10 @@ const App = (() => {
           else if (l.cartaoId) key = 'credito_' + l.cartaoId;
         }
         if (!key) return false;
-        if (!f.pagamentos.includes(key)) return false;
+        // Fixo no cartão ainda não pago (previsto) também sai no débito, pois será pago
+        // junto com a fatura: passa no filtro "Débito" além do filtro do próprio cartão.
+        const fixoCredPrevisto = l.tipo === 'fixo' && !!l.cartaoId && !l.autoFatura && !l.pago;
+        if (!f.pagamentos.includes(key) && !(fixoCredPrevisto && f.pagamentos.includes('debito'))) return false;
       }
 
       // Categoria/subcategoria
@@ -2017,9 +2020,15 @@ const App = (() => {
                             (it.l.tipo === 'fixo' && !!it.l.cartaoId && !it.l.autoFatura && it.status === 'previsto'));
     // Fixos no cartão (cartaoId) são crédito, mesmo com pagamento = id do cartão.
     // Status vem de _statusLanc: pago = efetuado; não pago = previsto (igual aos fixos no débito).
-    const cred = somar(it => it.l.tipo === 'credito' || (it.l.tipo === 'fixo' && !!it.l.cartaoId));
+    // Sob filtro de pagamento, o fixo no cartão só aparece em "crédito" se o filtro inclui aquele cartão
+    // (caso contrário ele só entrou pelo filtro "Débito").
+    const credFiltroOk = it => f.pagamentos.length === 0 || f.pagamentos.includes('credito_' + it.l.cartaoId);
+    const ehFixoCred = it => it.l.tipo === 'fixo' && !!it.l.cartaoId && !it.l.autoFatura;
+    const cred = somar(it => it.l.tipo === 'credito' || (ehFixoCred(it) && credFiltroOk(it)));
 
-    const totalSaidas = deb.total + cred.total;
+    // Fixo previsto no cartão aparece em crédito E em débito; no total de saídas conta uma vez só
+    const fixosCredDuplos = somar(it => ehFixoCred(it) && it.status === 'previsto' && credFiltroOk(it));
+    const totalSaidas = deb.total + cred.total - fixosCredDuplos.total;
     const balanco = ent.total - totalSaidas + saldoInicialPeriodo;
     const balancoEfet = ent.efet - (deb.efet + cred.efet) + saldoInicialPeriodo;
 
