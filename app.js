@@ -3535,7 +3535,7 @@ const App = (() => {
     await DB.clearFixosDeletadosByTemplate(templateId); // limpar registros de deleção manual
     const allLancs=await DB.getAllLancamentos();
     const mesAtual=mesAnoStr(state.currentMonth,state.currentYear);
-    for(const l of allLancs.filter(l=>l.templateId===templateId&&l.mesAno>=mesAtual))
+    for(const l of allLancs.filter(l=>l.templateId===templateId&&mesAnoNum(l.mesAno)>=mesAnoNum(mesAtual)))
       await DB.deleteLancamento(l.id);
     state.lancamentos=await DB.getLancamentos(mesAtual);
     closeModal();toast('Removido de todos os meses','info');goBack();
